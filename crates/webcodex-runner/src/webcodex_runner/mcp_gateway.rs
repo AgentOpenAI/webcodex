@@ -18,11 +18,11 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{mpsc, Arc, Mutex, RwLock, TryLockError};
 use std::time::{Duration, Instant};
 use webcodex_core::mcp_gateway::{
-    validate_json_value, validate_request, validate_tool_result, validate_tools, McpGatewayContent,
-    McpGatewayDispatchState, McpGatewayProvider, McpGatewayProviderState, McpGatewayRequest,
-    McpGatewayResponse, McpGatewayResponsePayload, McpGatewayTool, McpGatewayToolResult,
-    MCP_GATEWAY_MAX_MESSAGE_BYTES, MCP_GATEWAY_MAX_PROVIDER_MESSAGE_BYTES,
-    MCP_GATEWAY_MAX_RESULT_BYTES,
+    validate_json_value, validate_request, validate_tool_result,
+    validate_tools_with_description_limit, McpGatewayContent, McpGatewayDispatchState,
+    McpGatewayProvider, McpGatewayProviderState, McpGatewayRequest, McpGatewayResponse,
+    McpGatewayResponsePayload, McpGatewayTool, McpGatewayToolResult, MCP_GATEWAY_MAX_MESSAGE_BYTES,
+    MCP_GATEWAY_MAX_PROVIDER_MESSAGE_BYTES, MCP_GATEWAY_MAX_RESULT_BYTES,
 };
 use webcodex_process::ManagedChild;
 
@@ -40,6 +40,7 @@ pub(crate) struct McpGatewayManager {
 struct McpGatewayState {
     providers: BTreeMap<String, Arc<ProviderEntry>>,
     request_timeout: Duration,
+    max_tool_description_bytes: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +82,7 @@ struct ProviderFailure {
     code: &'static str,
     dispatch_state: McpGatewayDispatchState,
     fatal: bool,
+    detail: Option<String>,
 }
 
 impl ProviderFailure {
@@ -89,6 +91,7 @@ impl ProviderFailure {
             code,
             dispatch_state: McpGatewayDispatchState::NotStarted,
             fatal: true,
+            detail: None,
         }
     }
 
@@ -97,6 +100,7 @@ impl ProviderFailure {
             code,
             dispatch_state: McpGatewayDispatchState::OutcomeUnknown,
             fatal: true,
+            detail: None,
         }
     }
 
@@ -109,7 +113,20 @@ impl ProviderFailure {
             // poison the whole provider instance; only transport/protocol
             // failures that lose correlation retire the session.
             fatal: false,
+            detail: None,
         }
+    }
+
+    fn with_detail(mut self, mut detail: String) -> Self {
+        if detail.len() > 512 {
+            let mut end = 512;
+            while !detail.is_char_boundary(end) {
+                end -= 1;
+            }
+            detail.truncate(end);
+        }
+        self.detail = Some(detail);
+        self
     }
 
     fn not_started(code: &'static str) -> Self {
@@ -117,6 +134,7 @@ impl ProviderFailure {
             code,
             dispatch_state: McpGatewayDispatchState::NotStarted,
             fatal: false,
+            detail: None,
         }
     }
 
@@ -132,6 +150,7 @@ impl ProviderFailure {
             code: "provider_rpc_error",
             dispatch_state: McpGatewayDispatchState::Completed,
             fatal: false,
+            detail: None,
         }
     }
 }
@@ -148,6 +167,7 @@ impl McpGatewayManager {
             state: RwLock::new(McpGatewayState {
                 providers,
                 request_timeout: Duration::from_secs(config.request_timeout_secs.clamp(1, 120)),
+                max_tool_description_bytes: config.max_tool_description_bytes,
             }),
             stopping: AtomicBool::new(false),
         }
@@ -224,6 +244,7 @@ impl McpGatewayManager {
             }
             state.providers = next;
             state.request_timeout = Duration::from_secs(config.request_timeout_secs.clamp(1, 120));
+            state.max_tool_description_bytes = config.max_tool_description_bytes;
             summary = McpGatewayReloadSummary {
                 preserved,
                 replaced,
@@ -257,7 +278,8 @@ impl McpGatewayManager {
                 provider_id,
                 provider_instance_id,
             } => {
-                let Some((provider, _)) = self.exact_provider(&provider_id, &provider_instance_id)
+                let Some((provider, _, _)) =
+                    self.exact_provider(&provider_id, &provider_instance_id)
                 else {
                     return stale_provider();
                 };
@@ -269,7 +291,7 @@ impl McpGatewayManager {
                 provider_id,
                 provider_instance_id,
             } => {
-                let Some((provider, timeout)) =
+                let Some((provider, timeout, max_description_bytes)) =
                     self.exact_provider(&provider_id, &provider_instance_id)
                 else {
                     return stale_provider();
@@ -277,7 +299,7 @@ impl McpGatewayManager {
                 match provider.with_connection(
                     timeout,
                     || self.check_provider_admission(&provider_id, &provider_instance_id),
-                    |connection, timeout| connection.tools_list(timeout),
+                    |connection, timeout| connection.tools_list(timeout, max_description_bytes),
                 ) {
                     Ok(tools) => {
                         McpGatewayResponse::success(McpGatewayResponsePayload::Tools { tools })
@@ -292,7 +314,7 @@ impl McpGatewayManager {
                 arguments,
                 expected_schema,
             } => {
-                let Some((provider, timeout)) =
+                let Some((provider, timeout, max_description_bytes)) =
                     self.exact_provider(&provider_id, &provider_instance_id)
                 else {
                     return stale_provider();
@@ -303,7 +325,7 @@ impl McpGatewayManager {
                     |connection, timeout| {
                         let started = Instant::now();
                         let tools = connection
-                            .tools_list(timeout)
+                            .tools_list(timeout, max_description_bytes)
                             .map_err(ProviderFailure::preflight)?;
                         let Some(current) = tools.iter().find(|tool| tool.name == name) else {
                             return Err(ProviderFailure::not_started("provider_tool_missing"));
@@ -363,7 +385,7 @@ impl McpGatewayManager {
         &self,
         provider_id: &str,
         provider_instance_id: &str,
-    ) -> Option<(Arc<ProviderEntry>, Duration)> {
+    ) -> Option<(Arc<ProviderEntry>, Duration, usize)> {
         let state = self
             .state
             .read()
@@ -375,6 +397,7 @@ impl McpGatewayManager {
         Some((
             Arc::clone(provider),
             provider.request_timeout(state.request_timeout),
+            state.max_tool_description_bytes,
         ))
     }
 
@@ -727,7 +750,11 @@ impl ProviderConnection {
         Ok(connection)
     }
 
-    fn tools_list(&mut self, timeout: Duration) -> Result<Vec<McpGatewayTool>, ProviderFailure> {
+    fn tools_list(
+        &mut self,
+        timeout: Duration,
+        max_description_bytes: usize,
+    ) -> Result<Vec<McpGatewayTool>, ProviderFailure> {
         let result = self.request("tools/list", json!({}), timeout)?;
         validate_json_value(
             &result,
@@ -794,7 +821,9 @@ impl ProviderConnection {
                 meta,
             });
         }
-        validate_tools(&tools).map_err(|_| ProviderFailure::completed("invalid_provider_tools"))?;
+        validate_tools_with_description_limit(&tools, max_description_bytes).map_err(|error| {
+            ProviderFailure::completed("invalid_provider_tools").with_detail(error)
+        })?;
         Ok(tools)
     }
 
@@ -1191,18 +1220,21 @@ fn validate_initialize_result(result: &Value) -> Result<(), ProviderFailure> {
 
 fn provider_failure_response(error: ProviderFailure) -> McpGatewayResponse {
     let state = error.dispatch_state;
-    let message = match state {
-        McpGatewayDispatchState::NotStarted => {
-            "Provider request was not started; no downstream effect was dispatched"
+    let message = error.detail.unwrap_or_else(|| {
+        match state {
+            McpGatewayDispatchState::NotStarted => {
+                "Provider request was not started; no downstream effect was dispatched"
+            }
+            McpGatewayDispatchState::OutcomeUnknown => {
+                "Provider request may have been dispatched; outcome is unknown and must not be retried automatically"
+            }
+            McpGatewayDispatchState::Completed => {
+                "Provider completed the request-response exchange but returned a downstream error or unsupported/invalid bounded result"
+            }
         }
-        McpGatewayDispatchState::OutcomeUnknown => {
-            "Provider request may have been dispatched; outcome is unknown and must not be retried automatically"
-        }
-        McpGatewayDispatchState::Completed => {
-            "Provider completed the request-response exchange but returned a downstream error or unsupported/invalid bounded result"
-        }
-    };
-    bridge_error(state, error.code, message)
+        .to_string()
+    });
+    McpGatewayResponse::error(state, error.code, message)
 }
 
 fn bridge_error(
