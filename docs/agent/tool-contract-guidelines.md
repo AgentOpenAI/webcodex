@@ -587,6 +587,10 @@ remains `unknown`, and a live binding alone does not establish confirmation-free
 continuation. Dispatch acceptance, a fresh model turn, and exact consume remain
 distinct observations. Preserve uncertain delivery rather than blindly resending.
 
+Continuation behavior and Host integration changes use the
+[real-Host acceptance gate](../implementation/mcp-app-auto-resume-restoration.md).
+Local tests and accepted `ui/message` dispatch alone do not prove a fresh turn.
+
 ### Stable schemas and optional workflow guidance
 
 Host tool-schema refresh is an integration operation, not a workflow preference.

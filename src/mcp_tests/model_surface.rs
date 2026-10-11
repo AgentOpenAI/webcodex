@@ -63,6 +63,7 @@ async fn model_workflow_policy_changes_never_change_cached_tools_schemas_routes_
                     "get_goal",
                     "update_goal",
                     "present_agent_continuation",
+                    "present_job_terminal_continuation",
                 ] {
                     let args = json!({"name":"read_tool_manifest", "arguments":{"tool_name":tool}});
                     let params = if apps {
@@ -428,8 +429,8 @@ async fn specialist_tools_remain_discoverable_with_canonical_gateway_contracts()
 }
 
 #[tokio::test]
-async fn continuation_presentations_use_dedicated_direct_app_descriptors() {
-    let runtime = test_runtime();
+async fn continuation_presentations_are_direct_and_preserve_app_routing_and_scopes() {
+    let runtime = test_runtime_with_mcp_settings(true, true);
     for apps in [false, true] {
         for name in [
             "present_agent_continuation",
@@ -450,7 +451,9 @@ async fn continuation_presentations_use_dedicated_direct_app_descriptors() {
                 .unwrap()
                 .iter()
                 .find(|tool| tool["name"] == name)
-                .expect("Direct continuation descriptor");
+                .expect("dedicated continuation descriptor");
+            assert_eq!(descriptor["annotations"]["readOnlyHint"], true);
+            assert_eq!(descriptor["annotations"]["idempotentHint"], true);
             let resource = if name == "present_agent_continuation" {
                 MCP_AGENT_CONTINUATION_UI_RESOURCE_URI
             } else {
@@ -477,25 +480,84 @@ async fn continuation_presentations_use_dedicated_direct_app_descriptors() {
             assert_eq!(output["route"]["primary"]["tool"], name);
             assert_eq!(output["effect"], "observe");
             assert_eq!(output["idempotency"], "pure_read");
-            if apps {
-                let outcome = handle_mcp_request(
-                    &runtime,
-                    rpc(
-                        "tools/call",
-                        Some(json!(69)),
-                        mcp_2026_ui_params(adaptive_runtime_gateway_params(name, json!({}))),
-                    ),
-                    None,
-                )
-                .await;
-                let McpOutcome::BadRequest(error) = outcome else {
-                    panic!("{name}: {outcome:?}");
+            for (gateway, params) in [
+                (false, json!({"name": name, "arguments": {}})),
+                (true, adaptive_runtime_gateway_params(name, json!({}))),
+            ] {
+                let params = if apps {
+                    mcp_2026_ui_params(params)
+                } else {
+                    mcp_2026_params(params)
                 };
-                assert!(error["error"]["message"]
-                    .as_str()
-                    .unwrap()
-                    .contains("call_runtime_tool cannot invoke MCP App presentation tool"));
+                let outcome =
+                    handle_mcp_request(&runtime, rpc("tools/call", Some(json!(68)), params), None)
+                        .await;
+                if gateway && apps {
+                    let McpOutcome::BadRequest(value) = outcome else {
+                        panic!("{name}: {outcome:?}");
+                    };
+                    assert!(
+                        value["error"]["message"]
+                            .as_str()
+                            .unwrap()
+                            .contains("call_runtime_tool cannot invoke MCP App presentation"),
+                        "{value}"
+                    );
+                } else if name == "present_agent_continuation" {
+                    let McpOutcome::Ok(value) = outcome else {
+                        panic!("expected canonical Agent selector validation: {outcome:?}");
+                    };
+                    let result = &value["result"]["structuredContent"];
+                    assert_eq!(result["success"], false);
+                    assert_eq!(
+                        result["output"]["error_kind"],
+                        "incomplete_agent_continuation_selector"
+                    );
+                    assert_eq!(result["output"]["state_changed"], false);
+                } else {
+                    assert!(
+                        matches!(outcome, McpOutcome::BadRequest(_)),
+                        "{name}: {outcome:?}"
+                    );
+                }
             }
+
+            let mut unscoped = adaptive_direct_auth();
+            unscoped.kind = crate::auth::AuthKind::OAuth2Token;
+            unscoped.scopes.clear();
+            let scoped_list = crate::mcp::tools::mcp_tools_list_payload_with_features_for_auth(
+                false,
+                apps,
+                true,
+                Some(&unscoped),
+            );
+            assert!(!scoped_list["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|tool| tool["name"] == name));
+            let arguments = if name == "present_agent_continuation" {
+                json!({"agent_id": "wc_dagent_qqqqqqqqqqqqqqqq",
+                    "endpoint_id": "wc_endpoint_u7u7u7u7u7u7u7u7", "expected_controller_generation": 1})
+            } else {
+                json!({"wait_id": "wc_job_wait_q6urq6urq6urq6ur"})
+            };
+            let params = json!({"name": name, "arguments": arguments});
+            let params = if apps {
+                mcp_2026_ui_params(params)
+            } else {
+                mcp_2026_params(params)
+            };
+            let denied = handle_mcp_request(
+                &runtime,
+                rpc("tools/call", Some(json!(69)), params),
+                Some(&unscoped),
+            )
+            .await;
+            assert!(
+                matches!(denied, McpOutcome::Forbidden { .. }),
+                "{name}: {denied:?}"
+            );
         }
     }
 }
