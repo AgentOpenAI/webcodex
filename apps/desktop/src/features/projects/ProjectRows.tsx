@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Badge, Button, Table } from "@mantine/core";
+import { useEffect, useRef, useState } from "react";
+import { Badge, Button, Checkbox, Table } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { FolderClosed, GitBranch } from "lucide-react";
 import { useLocale } from "../../i18n/locale";
@@ -9,25 +9,39 @@ import { displayProjectPath, projectName, useWorkspace, workspaceQuery } from ".
 import { projectRunnerId } from "./project-device";
 import { observationTime } from "../workspace/WorkspaceStatus";
 
-export function ProjectRows({ projects, onUnregister, busy = false }: { projects: WorkspaceProject[]; onUnregister?: (project: WorkspaceProject) => void; busy?: boolean }) {
+export function ProjectRows({ projects, onUnregister, selected = [], onSelect, busy = false }: { projects: WorkspaceProject[]; onUnregister?: (project: WorkspaceProject) => void; selected?: string[]; onSelect?: (id: string, checked: boolean) => void; busy?: boolean }) {
   const p = useProduct();
   const compact = useMediaQuery("(max-width: 600px)", undefined, { getInitialValueInEffect: false });
   if (compact) return <div className="workspace-project-mobile-list">
-    {projects.map(project => <ProjectRow key={project.id || project.path} project={project} onUnregister={onUnregister} busy={busy} compact />)}  </div>;
+    {projects.map(project => <ProjectRow key={project.id || project.path} project={project} onUnregister={onUnregister} selected={selected.includes(project.id)} onSelect={onSelect} busy={busy} compact />)}  </div>;
   return <Table.ScrollContainer minWidth={onUnregister ? 680 : 560} className="workspace-project-table" type="native">
     <Table striped={false} highlightOnHover={false} verticalSpacing="sm" horizontalSpacing="sm" layout="fixed" aria-label={p("projects")}>
-      <Table.Thead><Table.Tr><Table.Th>{p("projects")}</Table.Th><Table.Th className="project-column-branch">{p("branch")}</Table.Th><Table.Th className="project-column-activity">{p("activeSessions")}</Table.Th><Table.Th className="project-column-updated">{p("lastUsed")}</Table.Th>{onUnregister && <Table.Th className="project-column-action">{p("manage")}</Table.Th>}</Table.Tr></Table.Thead>
-      <Table.Tbody>{projects.map(project => <ProjectRow key={project.id || project.path} project={project} onUnregister={onUnregister} busy={busy} />)}</Table.Tbody>
+      <Table.Thead><Table.Tr>{onSelect && <Table.Th style={{ width: 44 }} aria-label="Select projects" />}<Table.Th>{p("projects")}</Table.Th><Table.Th className="project-column-branch">{p("branch")}</Table.Th><Table.Th className="project-column-activity">{p("activeSessions")}</Table.Th><Table.Th className="project-column-updated">{p("lastUsed")}</Table.Th>{onUnregister && <Table.Th className="project-column-action">{p("manage")}</Table.Th>}</Table.Tr></Table.Thead>
+      <Table.Tbody>{projects.map(project => <ProjectRow key={project.id || project.path} project={project} onUnregister={onUnregister} selected={selected.includes(project.id)} onSelect={onSelect} busy={busy} />)}</Table.Tbody>
     </Table>
   </Table.ScrollContainer>;
 }
-function ProjectRow({ project, compact = false, onUnregister, busy }: { project: WorkspaceProject; compact?: boolean; onUnregister?: (project: WorkspaceProject) => void; busy?: boolean }) {  const p = useProduct(); const { locale } = useLocale();
+function ProjectRow({ project, compact = false, onUnregister, selected = false, onSelect, busy }: { project: WorkspaceProject; compact?: boolean; onUnregister?: (project: WorkspaceProject) => void; selected?: boolean; onSelect?: (id: string, checked: boolean) => void; busy?: boolean }) {  const p = useProduct(); const { locale } = useLocale();
   const [git, setGit] = useState<GitSummary | null>(null);
   const [gitStatus, setGitStatus] = useState<"idle" | "loading" | "ready" | "unconfirmed">("idle");
   const { revision, busy: workspaceBusy, state } = useWorkspace();
+  // A large project inventory should not dispatch Git probes for off-screen rows.
+  const rowRef = useRef<HTMLElement | null>(null);
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    if (visible || typeof IntersectionObserver === "undefined" || !rowRef.current) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    });
+    observer.observe(rowRef.current);
+    return () => observer.disconnect();
+  }, [visible, compact]);
   useEffect(() => { setGit(null); setGitStatus("idle"); }, [project.id, project.connected]);
   useEffect(() => {
-    if (workspaceBusy) return;
+    if (workspaceBusy || !visible) return;
     let cancelled = false;
 
     if (project.id && project.connected) {
@@ -44,7 +58,7 @@ function ProjectRow({ project, compact = false, onUnregister, busy }: { project:
       setGitStatus("idle");
     }
     return () => { cancelled = true; };
-  }, [project.id, project.connected, revision, workspaceBusy]);
+  }, [project.id, project.connected, revision, workspaceBusy, visible]);
   const name = projectName(project);
   const branch = gitStatus === "unconfirmed" || !project.connected ? p("projectStatusUnconfirmed") : git?.branch || (git?.non_git_project ? p("notGit") : "—");
   const changes = <ProjectGitChanges git={git} loading={gitStatus === "loading"} />;
@@ -56,11 +70,14 @@ function ProjectRow({ project, compact = false, onUnregister, busy }: { project:
   const updated = observationTime(project.sessions?.latest_updated_at ? project.sessions.latest_updated_at * 1000 : null, locale);
   const remove = onUnregister && runner === state.workspace_runner?.client_id && <Button variant="subtle" color="red" size="compact-sm" disabled={busy || !project.id || !project.connected}
     aria-label={`${p("unregisterProject")} ${name}`} onClick={() => onUnregister(project)}>{p("unregisterProject")}</Button>;
-  if (compact) return <article className="workspace-project-mobile-row" aria-label={name}>
-    <h3>{name}</h3><div className="project-path" title={path}>{path}</div>{origin}
+  const selection = onSelect && runner === state.workspace_runner?.client_id && project.id && project.connected
+    ? <Checkbox aria-label={`Select ${name}`} checked={selected} disabled={busy} onChange={event => onSelect(project.id, event.currentTarget.checked)} /> : null;
+  if (compact) return <article ref={node => { rowRef.current = node; }} className="workspace-project-mobile-row" aria-label={name}>
+    {selection}<h3>{name}</h3><div className="project-path" title={path}>{path}</div>{origin}
     <div className="project-row-meta"><span>{branch}</span><span>{activity}</span><time>{updated}</time></div>{changes}{remove}
   </article>;
-  return <Table.Tr aria-label={name}>
+  return <Table.Tr ref={node => { rowRef.current = node; }} aria-label={name}>
+    {onSelect && <Table.Td>{selection}</Table.Td>}
     <Table.Td>
       <div className="project-table-name">
         <div className="project-avatar" aria-hidden="true"><FolderClosed size={17} strokeWidth={1.75} /></div>

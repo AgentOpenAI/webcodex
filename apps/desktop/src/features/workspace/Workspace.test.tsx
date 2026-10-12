@@ -16,7 +16,7 @@ import { Dashboard } from "../dashboard/Dashboard";
 import { connectionFixture, connectionSnapshot } from "../../test/connections-fixtures";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
-const api = vi.hoisted(() => ({ managedInstructionsRead: vi.fn(async () => ({ path:"/fixture/desktop/instructions/AGENTS.md", exists:false, content:"", revision:"missing" })), prepareProjectUnregister: vi.fn(), unregisterProject: vi.fn(), runnerSettings: vi.fn(), updateRunnerSettings: vi.fn(), restartOwnedRunner: vi.fn(), sshResources: vi.fn(), addRunnerPlugin: vi.fn() }));
+const api = vi.hoisted(() => ({ managedInstructionsRead: vi.fn(async () => ({ path:"/fixture/desktop/instructions/AGENTS.md", exists:false, content:"", revision:"missing" })), prepareProjectUnregister: vi.fn(), prepareProjectsUnregister: vi.fn(), unregisterProject: vi.fn(), unregisterProjects: vi.fn(), runnerSettings: vi.fn(), updateRunnerSettings: vi.fn(), restartOwnedRunner: vi.fn(), sshResources: vi.fn(), addRunnerPlugin: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
 vi.mock("../../lib/desktop-api", () => ({ desktopApi: api }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn() }));
@@ -369,6 +369,29 @@ describe("product workspace task flows", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "Search projects" }), { target: { value: "ALPHA" } });
     expect(screen.getAllByRole("row")).toHaveLength(2);
   });
+  it("defers off-screen project Git probes until a row becomes visible", async () => {
+    const callbacks: IntersectionObserverCallback[] = [];
+    const observe = vi.fn();
+    class StubObserver {
+      constructor(callback: IntersectionObserverCallback) { callbacks.push(callback); }
+      observe = observe;
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal("IntersectionObserver", StubObserver);
+    try {
+      render(wrap(<ProjectsPanel />));
+      await screen.findByRole("row", { name: "alpha" });
+      expect(callbacks).toHaveLength(2);
+      expect(native.invoke.mock.calls.filter(([, value]) => value?.request?.kind === "project_git")).toHaveLength(0);
+      act(() => callbacks[0]([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver));
+      await waitFor(() => expect(native.invoke.mock.calls.filter(([, value]) => value?.request?.kind === "project_git")).toHaveLength(1));
+      expect(observe).toHaveBeenCalledTimes(2);
+    } finally {
+      cleanup();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("removes only a confirmed local project registration and keeps permission semantics explicit", async () => {
     const observation = {
       target: { config_path: "fixture.toml", client_id: "mini", server_url: "http://localhost" },
@@ -389,6 +412,167 @@ describe("product workspace task flows", () => {
     await waitFor(() => expect(api.unregisterProject).toHaveBeenCalledExactlyOnceWith(observation));
     expect(onState).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByRole("row", { name: "beta" })).not.toBeInTheDocument());
+  });
+
+  it("discards a pending removal confirmation after the workspace changes", async () => {
+    let resolveObservation!: (value: unknown) => void;
+    api.prepareProjectUnregister.mockImplementation(() => new Promise(resolve => { resolveObservation = resolve; }));
+    const onState = vi.fn();
+    const { rerender } = render(wrap(<ProjectsPanel onState={onState} />));
+    // Saved registrations render before the asynchronous Runner inventory.
+    // Wait until the observed project is connected and removal is actionable.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Remove project beta" }));
+    expect(api.prepareProjectUnregister).toHaveBeenCalledTimes(1);
+    const next = { ...state, workspace_runner: { ...state.workspace_runner!, client_id: "other" } };
+    rerender(wrap(<ProjectsPanel onState={onState} />, next));
+    await act(async () => resolveObservation({ target: state.workspace_runner, project: beta.id, expected_revision: "sha256:" + "a".repeat(64), path: beta.path }));
+    expect(screen.queryByRole("dialog", { name: "Remove project" })).not.toBeInTheDocument();
+    expect(onState).not.toHaveBeenCalled();
+  });
+
+  it("does not let a previous workspace request release a newer removal lock", async () => {
+    const pending: ((value: unknown) => void)[] = [];
+    api.prepareProjectUnregister.mockImplementation(() => new Promise(resolve => { pending.push(resolve); }));
+    const observation = (project: string) => ({ target: state.workspace_runner, project, path: beta.path, expected_revision: "sha256:" + "a".repeat(64) });
+    const onState = vi.fn();
+    const { rerender } = render(wrap(<ProjectsPanel onState={onState} />));
+    // Presence does not imply readiness: saved projects start disconnected.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Remove project beta" }));
+    expect(pending).toHaveLength(1);
+    const next = { ...state, workspace_runner: { ...state.workspace_runner!, config_path: "other.toml" } };
+    rerender(wrap(<ProjectsPanel onState={onState} />, next));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Remove project beta" }));
+    expect(pending).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Remove project beta" })).toBeDisabled();
+    await act(async () => pending[0](observation(beta.id)));
+    expect(screen.getByRole("button", { name: "Remove project beta" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "Remove project" })).not.toBeInTheDocument();
+    await act(async () => pending[1](observation(beta.id)));
+    expect(await screen.findByRole("dialog", { name: "Remove project" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled();
+    expect(onState).not.toHaveBeenCalled();
+  });
+
+  it("keeps the new workspace busy while an older batch precheck settles", async () => {
+    let resolveBatch!: (value: unknown) => void;
+    let resolveSingle!: (value: unknown) => void;
+    api.prepareProjectsUnregister.mockImplementation(() => new Promise(resolve => { resolveBatch = resolve; }));
+    api.prepareProjectUnregister.mockImplementation(() => new Promise(resolve => { resolveSingle = resolve; }));
+    const onState = vi.fn();
+    const { rerender } = render(wrap(<ProjectsPanel onState={onState} />));
+    // The local saved rows are not removable until the Runner inventory lands.
+    await waitFor(() => expect(screen.getByRole("button", { name: "Select / deselect visible" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Select / deselect visible" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove selected (2)" }));
+    expect(api.prepareProjectsUnregister).toHaveBeenCalledTimes(1);
+    const next = { ...state, workspace_runner: { ...state.workspace_runner!, config_path: "other.toml" } };
+    rerender(wrap(<ProjectsPanel onState={onState} />, next));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Remove project beta" }));
+    expect(screen.getByRole("button", { name: "Remove project beta" })).toBeDisabled();
+    await act(async () => resolveBatch([]));
+    expect(screen.getByRole("button", { name: "Remove project beta" })).toBeDisabled();
+    expect(api.unregisterProjects).not.toHaveBeenCalled();
+    await act(async () => resolveSingle({ target: next.workspace_runner, project: beta.id, path: beta.path, expected_revision: "sha256:" + "a".repeat(64) }));
+    expect(await screen.findByRole("dialog", { name: "Remove project" })).toBeInTheDocument();
+    expect(onState).not.toHaveBeenCalled();
+  });
+
+  it("binds batch confirmation to the displayed registration paths and revisions", async () => {
+    const observation = { target: state.workspace_runner, project: beta.id, path: beta.path, expected_revision: "sha256:" + "a".repeat(64) };
+    const replacement = { ...observation, path: "C:\\replacement", expected_revision: "sha256:" + "b".repeat(64) };
+    api.prepareProjectsUnregister.mockResolvedValue([observation]);
+    api.unregisterProjects.mockResolvedValue({ state, items: [{ project: beta.id, success: false, status: "revision_conflict" }] });
+    render(wrap(<ProjectsPanel onState={vi.fn()} />));
+    await screen.findByRole("checkbox", { name: "Select beta" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select beta" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove selected (1)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove selected (1)" });
+    expect(api.prepareProjectsUnregister).toHaveBeenCalledExactlyOnceWith([beta.id]);
+    expect(dialog).toHaveTextContent(beta.path);
+    // A registration replacement while the dialog is open must not refresh
+    // the revision underneath the user's already-reviewed confirmation.
+    api.prepareProjectsUnregister.mockResolvedValue([replacement]);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove selected (1)" }));
+    await waitFor(() => expect(api.unregisterProjects).toHaveBeenCalledExactlyOnceWith([observation]));
+    expect(api.prepareProjectsUnregister).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("row", { name: "beta" })).toBeInTheDocument();
+  });
+
+  it("discards stale removal work after returning to the same workspace", async () => {
+    let resolveObservation!: (value: unknown) => void;
+    api.prepareProjectUnregister.mockImplementation(() => new Promise(resolve => { resolveObservation = resolve; }));
+    const onState = vi.fn();
+    const { rerender } = render(wrap(<ProjectsPanel onState={onState} />));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Remove project beta" }));
+    expect(api.prepareProjectUnregister).toHaveBeenCalledTimes(1);
+    const next = { ...state, workspace_runner: { ...state.workspace_runner!, config_path: "other.toml" } };
+    rerender(wrap(<ProjectsPanel onState={onState} />, next));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Remove project beta" })).toBeEnabled());
+    rerender(wrap(<ProjectsPanel onState={onState} />));
+    await screen.findByRole("button", { name: "Remove project beta" });
+    await act(async () => resolveObservation({ target: state.workspace_runner, project: beta.id, path: beta.path, expected_revision: "sha256:" + "a".repeat(64) }));
+    expect(screen.queryByRole("dialog", { name: "Remove project" })).not.toBeInTheDocument();
+    expect(api.unregisterProject).not.toHaveBeenCalled();
+    expect(onState).not.toHaveBeenCalled();
+  });
+
+  it("prepares and executes a large selection in bounded chunks without replacing confirmed observations", async () => {
+    const projects = Array.from({ length: 17 }, (_, index) => ({ ...beta, id: `agent:mini:project-${index}`, name: `project-${index}`, path: `/projects/${index}` }));
+    const normal = native.invoke.getMockImplementation()!;
+    native.invoke.mockImplementation((command, value) => value.request.kind === "projects"
+      ? Promise.resolve({ projects, total: projects.length, truncated: false })
+      : normal(command, value));
+    const observation = (project: string) => ({ target: state.workspace_runner, project, path: projects.find(row => row.id === project)!.path, expected_revision: "sha256:" + "a".repeat(64) });
+    api.prepareProjectsUnregister.mockImplementation(async (ids: string[]) => ids.map(observation));
+    api.unregisterProjects.mockImplementation(async (items: { project: string }[]) => ({ state, items: items.map(item => ({ project: item.project, success: true, status: "unregistered" })) }));
+    render(wrap(<ProjectsPanel onState={vi.fn()} />));
+    await screen.findByRole("checkbox", { name: "Select project-16" });
+    fireEvent.click(screen.getByRole("button", { name: "Select / deselect visible" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove selected (17)" }));
+    // Confirm the large batch dialog and its title separately. Mantine can
+    // register the dialog accessibility label after the content has mounted.
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Remove selected (17)" })).toBeInTheDocument();
+    expect(api.prepareProjectsUnregister.mock.calls.map(([ids]) => ids.length)).toEqual([16, 1]);
+    expect(api.unregisterProjects).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove selected (17)" }));
+    await waitFor(() => expect(api.unregisterProjects).toHaveBeenCalledTimes(2));
+    expect(api.unregisterProjects.mock.calls.map(([items]) => items.length)).toEqual([16, 1]);
+    expect(api.unregisterProjects.mock.calls.flatMap(([items]) => items)).toEqual(projects.map(row => observation(row.id)));
+    expect(api.prepareProjectsUnregister).toHaveBeenCalledTimes(2);
+  }, 15_000); // 17 rendered rows and two bounded batches under concurrent CI workers.
+
+  it("selects visible projects and stops a batch after the first unconfirmed removal", async () => {
+    const target = { config_path: "fixture.toml", client_id: "mini", server_url: "http://localhost" };
+    const observation = (project: string) => ({ target, project, path: project === alpha.id ? alpha.path : beta.path, expected_revision: "sha256:" + "a".repeat(64) });
+    api.prepareProjectUnregister.mockImplementation(async (project: string) => observation(project));
+    api.prepareProjectsUnregister.mockImplementation(async (projects: string[]) => projects.map(observation));
+    api.unregisterProjects.mockResolvedValue({ state, items: [
+      { project: alpha.id, success: true, status: "unregistered" },
+      { project: beta.id, success: false, status: "failed_or_unconfirmed" },
+    ] });
+    const onState = vi.fn();
+    render(wrap(<ProjectsPanel onState={onState} />));
+    await screen.findByLabelText("2 open sessions");
+    fireEvent.click(screen.getByRole("button", { name: "Select / deselect visible" }));
+    expect(screen.getByRole("checkbox", { name: "Select alpha" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Select beta" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Remove selected (2)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove selected (2)" });
+    expect(dialog).toHaveTextContent("Your folder and Git files stay on disk");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Remove selected (2)" }));
+    await waitFor(() => expect(api.unregisterProjects).toHaveBeenCalledExactlyOnceWith([observation(alpha.id), observation(beta.id)]));
+    expect(api.prepareProjectsUnregister).toHaveBeenCalledExactlyOnceWith([alpha.id, beta.id]);
+    expect(api.unregisterProject).not.toHaveBeenCalled();
+    expect(onState).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("row", { name: "alpha" })).not.toBeInTheDocument();
+    expect(screen.getByRole("row", { name: "beta" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Unregister was not confirmed");
   });
 
   it.each([
