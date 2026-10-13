@@ -751,6 +751,7 @@ fn sparse_success_item(item: &Value) -> Option<Value> {
         "activity",
         "detected_summary",
         "validation",
+        "build_artifacts",
         "manage_ssh_resource",
         "logs_omitted",
         "suggested_call",

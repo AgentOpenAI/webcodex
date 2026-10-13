@@ -559,6 +559,12 @@ runner_capabilities! {
         #[serde(default, skip_serializing_if = "is_false")]
         pub project_build_v1: bool = false;
     }
+    /// Python packaging through an existing interpreter and installed build frontend.
+    ProjectBuildPython => RUNNER_CAPABILITY_PROJECT_BUILD_PYTHON("project_build_python_v1"),
+    v2_baseline = false {
+        #[serde(default, skip_serializing_if = "is_false")]
+        pub project_build_python_v1: bool = false;
+    }
     /// Complete bounded project formatting lifecycle. Planning support alone
     /// must never advertise this capability; older Runners default to false.
     ProjectFormat => RUNNER_CAPABILITY_PROJECT_FORMAT("project_format_v1"),
@@ -2855,6 +2861,7 @@ mod envelope_tests {
                 structured_go_test_json: true,
                 project_validation_v1: false,
                 project_build_v1: false,
+                project_build_python_v1: false,
                 project_format_v1: false,
                 project_dependency_policy_v1: false,
                 project_go_single_module_v1: false,
@@ -3306,6 +3313,7 @@ mod envelope_tests {
                 validation_progress: None,
                 test_count_evidence: None,
                 format_mutation: None,
+                build_artifacts: None,
                 activity: None,
             }],
         }
@@ -3992,6 +4000,7 @@ mod envelope_tests {
                 validation_progress: None,
                 test_count_evidence: None,
                 format_mutation: None,
+                build_artifacts: None,
                 activity: None,
                 finished: false,
             },
@@ -4321,6 +4330,7 @@ mod envelope_tests {
             validation_progress: None,
             test_count_evidence: None,
             format_mutation: None,
+            build_artifacts: None,
             activity: None,
             finished: false,
         };

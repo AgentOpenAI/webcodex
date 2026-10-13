@@ -231,6 +231,62 @@ pub(crate) fn configured_node_project_check_job_command(
     Ok(command)
 }
 
+/// Build frontend availability is checked without importing project hooks. The
+/// same configured interpreter and environment execute the real packaging job.
+/// `build --no-isolation` performs backend dependency checks and never installs.
+pub(crate) fn configured_python_build_job_command(
+    shell: &ShellConfig,
+    profile: Option<&PreparedShellProfile>,
+    args: &[String],
+    cwd: &Path,
+    stop_requested: Option<&AtomicBool>,
+    deadline: Instant,
+) -> Result<Command, String> {
+    let unavailable = || "build_tool_unavailable".to_string();
+    let program = super::scripts::configured_validation_python_interpreter(shell, profile)
+        .map_err(|_| unavailable())?;
+    let mut probe = Command::new(&program);
+    probe.args(["-c", "import sys,importlib.util;sys.exit(0 if sys.version_info.major == 3 and importlib.util.find_spec('build') else 42)"])
+        .current_dir(cwd).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    super::scripts::apply_script_environment(&mut probe, shell, profile)
+        .map_err(|_| unavailable())?;
+    if stop_requested.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+        return Err("build_cancelled".into());
+    }
+    if Instant::now() >= deadline {
+        return Err("build_timeout".into());
+    }
+    let mut child = ManagedChild::spawn(&mut probe).map_err(|_| unavailable())?;
+    let probe_deadline = deadline.min(Instant::now() + Duration::from_secs(5));
+    let available = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None)
+                if Instant::now() < probe_deadline
+                    && !stop_requested.is_some_and(|flag| flag.load(Ordering::SeqCst)) =>
+            {
+                std::thread::sleep(Duration::from_millis(20))
+            }
+            _ => break false,
+        }
+    };
+    let cleaned = terminate_child_process_tree(&mut child).is_ok();
+    if stop_requested.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+        return Err("build_cancelled".into());
+    }
+    if Instant::now() >= deadline {
+        return Err("build_timeout".into());
+    }
+    if !available || !cleaned {
+        return Err(unavailable());
+    }
+    let mut command = Command::new(program);
+    command.args(args);
+    super::scripts::apply_script_environment(&mut command, shell, profile)
+        .map_err(|_| unavailable())?;
+    Ok(command)
+}
+
 pub(crate) fn configured_pytest_job_command(
     shell: &ShellConfig,
     profile: Option<&PreparedShellProfile>,

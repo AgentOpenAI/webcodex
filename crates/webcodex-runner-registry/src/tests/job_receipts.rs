@@ -1006,3 +1006,33 @@ async fn job_telemetry_contention_omits_snapshot_without_waiting_or_mutating() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn project_build_artifact_observations_restore_without_replay_or_invented_metadata() {
+    use webcodex_core::project_build::ProjectBuildArtifact;
+    use webcodex_core::runner_protocol::{ShellCommandExecutionState,ShellJobStructuredExecutionMetadata};
+    for known in [true,false] {
+        let store=Arc::new(MemoryReceipts::default());let before=durable(&store).await;
+        register(&before,INSTANCE_A,empty_inventory()).await;
+        let (job,_)=start_and_take_over(&before,INSTANCE_A).await;
+        {
+            let mut inner=before.inner.lock().await;
+            let record=inner.jobs_by_id.get_mut(&job.job_id).unwrap();
+            record.kind="project_build".into();record.purpose=Some("build".into());
+            record.structured_execution=Some(ShellJobStructuredExecutionMetadata { execution_source:"project_build".into(),language:None,script_bytes:None,arg_count:3,stdin_present:false,validation_identity:None,assertion_name:None,validation_tool:None });
+            record.command_execution_state=Some(ShellCommandExecutionState::NotStarted);
+        }
+        let observations=known.then(|| vec![ProjectBuildArtifact { path:"dist/existing.whl".into(),bytes:4,sha256:"a".repeat(64),mime_type:Some("application/zip".into()) }]);
+        let mut terminal=update(INSTANCE_A,&job.job_id,2,"completed",None,true);
+        terminal.command_execution_state=Some(ShellCommandExecutionState::Completed);terminal.build_artifacts=observations.clone();
+        let completed=before.update_job(terminal).await.unwrap();
+        assert_eq!(completed.build_artifacts,observations);
+        let receipt=store.rows.lock().unwrap()[0].clone();assert_eq!(receipt.snapshot.build_artifacts,observations);
+        drop(before);
+        let after=durable(&store).await;
+        let restored=after.get_job(&job.job_id).await.unwrap();
+        assert_eq!(restored.job_id,job.job_id);assert_eq!(restored.request_id,job.request_id);
+        assert_eq!(restored.status,"completed");assert_eq!(restored.build_artifacts,observations);
+        assert!(after.list_runners().await.is_empty(),"restoring observations cannot create a Runner or execution authority");
+    }
+}

@@ -537,6 +537,7 @@ fn delivery_queue_orders_semantic_truth_and_drops_stale_output_only_updates() {
         validation_progress: None,
         test_count_evidence: None,
         format_mutation: None,
+        build_artifacts: None,
         activity: None,
         finished: false,
     };
@@ -690,6 +691,7 @@ fn delivery_worker_waits_for_sequence_barrier_before_selecting_candidate() {
         validation_progress: None,
         test_count_evidence: None,
         format_mutation: None,
+        build_artifacts: None,
         activity: None,
         finished: false,
         liveness_only: false,

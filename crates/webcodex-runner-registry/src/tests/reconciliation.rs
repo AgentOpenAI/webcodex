@@ -352,6 +352,7 @@ fn snapshot_from_request(
         validation_progress: None,
         test_count_evidence: None,
         format_mutation: None,
+        build_artifacts: None,
         activity: None,
     }
 }
@@ -381,6 +382,7 @@ fn update(
         validation_progress: None,
         test_count_evidence: None,
         format_mutation: None,
+        build_artifacts: None,
         activity: None,
         finished,
     }
@@ -543,6 +545,7 @@ async fn validation_progress_accepts_sequence_only_heartbeats_and_coalesced_gaps
             }),
             test_count_evidence: None,
             format_mutation: None,
+            build_artifacts: None,
             activity,
             finished,
         }
@@ -2857,6 +2860,7 @@ fn standalone_snapshot(job_id: &str, status: &str) -> ShellJobSnapshot {
         validation_progress: None,
         test_count_evidence: None,
         format_mutation: None,
+        build_artifacts: None,
         activity: None,
     }
 }

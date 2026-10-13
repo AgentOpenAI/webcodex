@@ -316,3 +316,88 @@ async fn go_project_build_job_handoff_requires_single_module_capability() {
         }
     }
 }
+
+#[tokio::test]
+async fn python_project_build_capability_is_checked_for_planning_and_auto_discovered_admission() {
+    let registry = RunnerRegistry::default();
+    let access = auth_context(None, true);
+    registry.register(registration(true)).await.unwrap();
+    let mut request = build_request();
+    request.adapter = ProjectBuildAdapter::Python;
+    let error = registry
+        .enqueue_project_build_plan("build-runner".into(), request.clone(), Some(&access))
+        .await
+        .unwrap_err();
+    assert!(error.contains("project_build_python_v1"), "{error}");
+    // Auto planning can discover Python. Its typed StartBuild still cannot be
+    // submitted to an older Runner advertising only generic project_build_v1.
+    request.adapter = ProjectBuildAdapter::Auto;
+    let process = canonical_project_build_process("python", &request).unwrap();
+    let plan = ProjectBuildPlan {
+        provenance: ProjectBuildProvenance {
+            request,
+            backend: "python".into(),
+            recipe_root: ".".into(),
+            root_digest: "1".repeat(64),
+            manifest_digest: "2".repeat(64),
+            invocation_digest: project_build_invocation_digest(&process),
+        },
+        process,
+    };
+    let error = registry
+        .start_job_with_metadata_for_access(
+            ShellJobOpRequest {
+                login: false,
+                op: "start".into(),
+                client_id: Some("build-runner".into()),
+                cwd: Some("/tmp/demo".into()),
+                command: Some(String::new()),
+                timeout_secs: Some(60),
+                job_id: None,
+                since_stdout_line: None,
+                since_stderr_line: None,
+                tail_lines: None,
+                limit: None,
+                codex: None,
+            },
+            "test".into(),
+            ShellJobStartMetadata {
+                project_id: Some("agent:build-runner:demo".into()),
+                project_cwd: Some(".".into()),
+                purpose: Some("build".into()),
+                shell: Some("direct_argv".into()),
+                structured_execution: Some(StructuredJobExecution::ProjectBuild(plan)),
+                ..Default::default()
+            },
+            None,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(error.contains("project_build_python_v1"), "{error}");
+    assert!(registry
+        .poll(RunnerPollRequest {
+            client_id: "build-runner".into(),
+            runner_instance_id: "inst".into()
+        })
+        .await
+        .unwrap()
+        .is_none());
+    let mut registered = registration(true);
+    registered.capabilities.project_build_python_v1 = true;
+    registry.register(registered).await.unwrap();
+    let mut request = build_request();
+    request.adapter = ProjectBuildAdapter::Python;
+    let (_id, _rx) = registry
+        .enqueue_project_build_plan("build-runner".into(), request, Some(&access))
+        .await
+        .unwrap();
+    assert!(registry
+        .poll(RunnerPollRequest {
+            client_id: "build-runner".into(),
+            runner_instance_id: "inst".into()
+        })
+        .await
+        .unwrap()
+        .is_some());
+}

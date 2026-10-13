@@ -1535,7 +1535,7 @@ pub enum ToolCall {
     },
 
     /// Run one portable project build. The Runner resolves the nearest supported
-    /// Rust/Go recipe, plans canonical argv, and admits one typed build Job.
+    /// Rust/Go/Python recipe, plans canonical argv, and admits one typed build Job.
     ProjectBuild {
         /// Exact registered Runner Project.
         project: String,

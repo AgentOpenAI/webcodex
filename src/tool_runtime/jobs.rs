@@ -884,6 +884,12 @@ pub(crate) fn agent_job_summary_value(job: &ShellJobInfo) -> Value {
             job.recovery_reason_code.as_deref(),
         ),
     });
+    if let Some(artifacts) = &job.build_artifacts {
+        summary["build_artifacts"] = json!(artifacts);
+    }
+    if let Some(kind) = super::project_build::artifact_observation_failure_kind(job) {
+        summary["failure_kind"] = json!(kind);
+    }
     if job.kind == "project_format" {
         summary["state_changed"] = json!(job.format_mutation.unwrap_or_default().state_changed());
         summary["failure_kind"] =
@@ -1914,6 +1920,12 @@ impl ToolRuntime {
                     "detected_summary": detected_summary,
                     "validation": validation,
                 });
+                if let Some(artifacts) = &job.build_artifacts {
+                    output["build_artifacts"] = json!(artifacts);
+                }
+                if let Some(kind) = super::project_build::artifact_observation_failure_kind(&job) {
+                    output["failure_kind"] = json!(kind);
+                }
                 if job.kind == "project_format" {
                     output["state_changed"] =
                         json!(job.format_mutation.unwrap_or_default().state_changed());
@@ -2939,6 +2951,7 @@ mod recovery_projection_tests {
             validation_progress: None,
             test_count_evidence: None,
             format_mutation: None,
+            build_artifacts: None,
             activity: None,
             validation: None,
             recovery_state: None,
@@ -2992,6 +3005,7 @@ mod recovery_projection_tests {
             validation_progress: None,
             test_count_evidence: None,
             format_mutation: None,
+            build_artifacts: None,
             activity: None,
             validation: None,
             recovery_state: Some("lost_after_reconcile".to_string()),

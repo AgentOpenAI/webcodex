@@ -116,6 +116,7 @@ mod internal;
 mod output;
 mod preparation;
 mod process;
+pub(crate) use process::run_python_build_with_start_hook;
 mod process_tree;
 mod profiles;
 mod run;

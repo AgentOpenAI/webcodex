@@ -135,6 +135,8 @@ pub struct RunnerJobUpdateRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format_mutation: Option<crate::project_format::ProjectFormatMutationReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_artifacts: Option<Vec<crate::project_build::ProjectBuildArtifact>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<ShellJobActivity>,
     #[serde(default)]
     pub finished: bool,
@@ -1259,6 +1261,8 @@ pub struct ShellJobSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format_mutation: Option<crate::project_format::ProjectFormatMutationReport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_artifacts: Option<Vec<crate::project_build::ProjectBuildArtifact>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<ShellJobActivity>,
 }
 
@@ -1345,6 +1349,8 @@ pub struct ShellJobInfo {
     /// Executor-owned formatting truth. Missing historical evidence is unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub format_mutation: Option<crate::project_format::ProjectFormatMutationReport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub build_artifacts: Option<Vec<crate::project_build::ProjectBuildArtifact>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub activity: Option<ShellJobActivity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

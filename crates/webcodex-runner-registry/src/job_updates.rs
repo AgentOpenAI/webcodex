@@ -375,6 +375,7 @@ struct JobPublicMutationSignature {
     validation_progress: Option<webcodex_core::runner_protocol::ShellJobValidationProgress>,
     test_count_evidence: Option<webcodex_core::runner_protocol::ShellJobTestCountEvidence>,
     format_mutation: Option<webcodex_core::project_format::ProjectFormatMutationReport>,
+    build_artifacts: Option<Vec<webcodex_core::project_build::ProjectBuildArtifact>>,
     activity: Option<ShellJobActivity>,
     recovered_after_server_restart: bool,
     reconciled_at: Option<i64>,
@@ -396,6 +397,7 @@ fn public_mutation_signature(job: &ShellJobRecord) -> JobPublicMutationSignature
         validation_progress: job.validation_progress.clone(),
         test_count_evidence: job.test_count_evidence.clone(),
         format_mutation: job.format_mutation,
+        build_artifacts: job.build_artifacts.clone(),
         activity: job.activity,
         recovered_after_server_restart: job.recovery.recovered_after_server_restart,
         reconciled_at: job.recovery.reconciled_at,
@@ -860,6 +862,7 @@ impl RunnerRegistry {
             }) => Some(runner_instance_id.clone()),
             _ => None,
         };
+        let python_build_request = matches!(&structured_execution, Some(StructuredJobExecution::ProjectBuild(plan)) if plan.provenance.backend == "python");
         let project_build_request = matches!(
             structured_execution.as_ref(),
             Some(StructuredJobExecution::ProjectBuild(_))
@@ -1367,6 +1370,16 @@ impl RunnerRegistry {
                 RunnerFeature::ProjectBuild,
             ));
         }
+        if python_build_request
+            && !runner
+                .runner_features
+                .supports(RunnerFeature::ProjectBuildPython)
+        {
+            return Err(capability_upgrade_error(
+                &client_id,
+                RunnerFeature::ProjectBuildPython,
+            ));
+        }
         if project_all_packages_request
             && !runner
                 .runner_features
@@ -1734,6 +1747,7 @@ impl RunnerRegistry {
             validation_progress: None,
             test_count_evidence: None,
             format_mutation: None,
+            build_artifacts: None,
             activity: None,
             last_update_seq: 0,
             visibility: metadata.visibility,
@@ -3184,6 +3198,16 @@ impl RunnerRegistry {
                     )
                     .map_err(|_| ValidationProtocolError("format_mutation_invalid"))
                 })
+                .and_then(|_| {
+                    webcodex_core::project_build::validate_build_artifact_report(
+                        &job.kind,
+                        incoming_lifecycle.as_wire(),
+                        body.exit_code,
+                        body.command_execution_state,
+                        body.build_artifacts.as_deref(),
+                    )
+                    .map_err(ValidationProtocolError)
+                })
                 .and_then(|_| validate_command_execution_state(job, &body, incoming_lifecycle))
                 .and_then(|_| validate_job_activity(job, &body, incoming_lifecycle))
             {
@@ -3214,6 +3238,9 @@ impl RunnerRegistry {
                 }
                 if body.validation_progress.is_some() {
                     job.validation_progress = body.validation_progress.clone();
+                }
+                if body.build_artifacts.is_some() {
+                    job.build_artifacts = body.build_artifacts.clone();
                 }
                 if body.format_mutation.is_some() {
                     job.format_mutation = body.format_mutation;
