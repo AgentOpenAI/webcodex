@@ -559,6 +559,18 @@ runner_capabilities! {
         #[serde(default, skip_serializing_if = "is_false")]
         pub project_build_v1: bool = false;
     }
+    /// Manifest-declared Node build with bounded canonical manager argv.
+    ProjectBuildNode => RUNNER_CAPABILITY_PROJECT_BUILD_NODE("project_build_node_v1"),
+    v2_baseline = false {
+        #[serde(default, skip_serializing_if = "is_false")]
+        pub project_build_node_v1: bool = false;
+    }
+    /// Owned per-Job Vitest/Jest JSON reports and durable test counts.
+    ProjectValidationNodeJson => RUNNER_CAPABILITY_PROJECT_VALIDATION_NODE_JSON("project_validation_node_json_v1"),
+    v2_baseline = false {
+        #[serde(default, skip_serializing_if = "is_false")]
+        pub project_validation_node_json_v1: bool = false;
+    }
     /// Python packaging through an existing interpreter and installed build frontend.
     ProjectBuildPython => RUNNER_CAPABILITY_PROJECT_BUILD_PYTHON("project_build_python_v1"),
     v2_baseline = false {
@@ -2861,6 +2873,8 @@ mod envelope_tests {
                 structured_go_test_json: true,
                 project_validation_v1: false,
                 project_build_v1: false,
+                project_build_node_v1: false,
+                project_validation_node_json_v1: false,
                 project_build_python_v1: false,
                 project_format_v1: false,
                 project_dependency_policy_v1: false,

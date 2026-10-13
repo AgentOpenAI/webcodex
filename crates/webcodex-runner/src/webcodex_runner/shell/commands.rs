@@ -193,6 +193,7 @@ pub(crate) fn configured_prepared_shell_job_command(
 /// Native Node project-check command. Interpreter resolution is Runner-owned
 /// and the same exact executable is probed and used for the script. An existing
 /// project script may have effects; this does not create a filesystem sandbox.
+#[cfg(test)]
 pub(crate) fn configured_node_project_check_job_command(
     shell: &ShellConfig,
     profile: Option<&PreparedShellProfile>,
@@ -200,11 +201,31 @@ pub(crate) fn configured_node_project_check_job_command(
     cwd: &Path,
     stop_requested: Option<&AtomicBool>,
 ) -> Result<Command, String> {
-    if !step.is_structured_node_check() && !step.is_structured_node_tap_test() {
+    configured_node_project_job_command(shell, profile, step, cwd, stop_requested, None)
+}
+
+pub(crate) fn configured_node_project_job_command(
+    shell: &ShellConfig,
+    profile: Option<&PreparedShellProfile>,
+    step: &ShellJobValidationStep,
+    cwd: &Path,
+    stop_requested: Option<&AtomicBool>,
+    report_path: Option<&Path>,
+) -> Result<Command, String> {
+    if step.node_json_framework().is_some() && report_path.is_none() {
+        return Err("owned Node report path required".into());
+    }
+    if !step.is_structured_node_check()
+        && !step.is_structured_node_tap_test()
+        && step.node_json_framework().is_none()
+    {
         return Err("invalid Node project validation step".into());
     }
     let unavailable =
         || webcodex_core::runner_protocol::VALIDATION_TOOL_UNAVAILABLE_CODE.to_string();
+    if step.node_json_framework().is_some() && !cwd.join(&step.args[0]).is_file() {
+        return Err(unavailable());
+    }
     let program = super::scripts::configured_validation_node_interpreter(shell, profile)
         .map_err(|_| unavailable())?;
     let mut probe = Command::new(&program);
@@ -217,14 +238,21 @@ pub(crate) fn configured_node_project_check_job_command(
     let (status, stdout, _) = run_prepare_command(probe, Duration::from_secs(5), stop_requested)
         .map_err(|_| unavailable())?;
     let version = super::scripts::parse_node_version(&stdout).ok_or_else(unavailable)?;
-    if !status.success() || version.major < 22 || (version.major == 22 && version.minor < 3) {
+    if !status.success()
+        || (step.node_json_framework().is_none()
+            && (version.major < 22 || (version.major == 22 && version.minor < 3)))
+    {
         return Err(unavailable());
     }
     let mut command = Command::new(&program);
-    command
-        .args(&step.args)
-        .current_dir(cwd)
-        .stdin(Stdio::null());
+    for arg in &step.args {
+        if arg == "__WEBCODEX_JOB_REPORT__" {
+            command.arg(report_path.expect("owned report path"));
+        } else {
+            command.arg(arg);
+        }
+    }
+    command.current_dir(cwd).stdin(Stdio::null());
     super::scripts::apply_script_environment(&mut command, shell, profile)
         .map_err(|_| unavailable())?;
     command.env_remove("NODE_OPTIONS");

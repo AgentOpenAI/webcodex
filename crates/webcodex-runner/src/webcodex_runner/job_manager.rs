@@ -370,6 +370,7 @@ mod input;
 mod interactive;
 mod lifecycle;
 mod local_shell;
+mod node_report;
 mod process;
 #[cfg(test)]
 use retained::{append_runner_stream, trim_runner_stream_to};

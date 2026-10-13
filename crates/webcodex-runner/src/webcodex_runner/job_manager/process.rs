@@ -97,6 +97,13 @@ impl JobManager {
                 RunnerJobOperation::StartBuild(request) => {
                     let env_overrides = if request.provenance.backend == "go" {
                         &GO_PROJECT_SINGLE_MODULE_ENV[..]
+                    } else if request.provenance.backend == "node" {
+                        &[
+                            ("COREPACK_ENABLE_NETWORK", "0"),
+                            ("COREPACK_ENABLE_DOWNLOAD_PROMPT", "0"),
+                            ("COREPACK_ENV_FILE", "0"),
+                            ("COREPACK_ENABLE_AUTO_PIN", "0"),
+                        ][..]
                     } else {
                         &[]
                     };

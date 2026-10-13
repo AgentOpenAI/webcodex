@@ -21,6 +21,7 @@ pub enum ProjectBuildAdapter {
     Auto,
     Rust,
     Go,
+    Node,
     Python,
 }
 
@@ -96,10 +97,11 @@ impl ProjectBuildProvenance {
             && validate_relative(&self.recipe_root).is_ok()
             && matches!(
                 (self.request.adapter, self.backend.as_str()),
-                (ProjectBuildAdapter::Auto, "rust" | "go" | "python")
+                (ProjectBuildAdapter::Auto, "rust" | "go" | "python" | "node")
                     | (ProjectBuildAdapter::Rust, "rust")
                     | (ProjectBuildAdapter::Go, "go")
                     | (ProjectBuildAdapter::Python, "python")
+                    | (ProjectBuildAdapter::Node, "node")
             )
             && [
                 &self.root_digest,
@@ -121,8 +123,12 @@ pub struct ProjectBuildPlan {
 impl ProjectBuildPlan {
     pub fn is_valid(&self) -> bool {
         self.provenance.is_valid()
-            && canonical_project_build_process(&self.provenance.backend, &self.provenance.request)
-                .is_ok_and(|process| process == self.process)
+            && canonical_project_build_process_with_manager(
+                &self.provenance.backend,
+                &self.provenance.request,
+                &self.process.executable,
+            )
+            .is_ok_and(|process| process == self.process)
             && project_build_invocation_digest(&self.process) == self.provenance.invocation_digest
     }
 }
@@ -142,6 +148,16 @@ pub enum ProjectBuildPlanningResult {
 pub fn canonical_project_build_process(
     backend: &str,
     request: &ProjectBuildRequest,
+) -> Result<ShellProcessArgv, &'static str> {
+    canonical_project_build_process_with_manager(backend, request, "npm")
+}
+
+/// Node manager is resolved from the manifest and bound by invocation digest and
+/// Runner re-planning; this validator accepts only the closed script vocabulary.
+pub fn canonical_project_build_process_with_manager(
+    backend: &str,
+    request: &ProjectBuildRequest,
+    manager: &str,
 ) -> Result<ShellProcessArgv, &'static str> {
     let packages = request
         .scope
@@ -196,6 +212,19 @@ pub fn canonical_project_build_process(
             Ok(ShellProcessArgv {
                 executable: "go".to_string(),
                 args,
+            })
+        }
+        "node" if matches!(manager, "npm" | "pnpm" | "yarn" | "bun") => {
+            if request.scope.is_some() || request.dependency_policy.is_some() {
+                return Err("Node build scope/dependency policy unavailable");
+            }
+            Ok(ShellProcessArgv {
+                executable: manager.into(),
+                args: if manager == "yarn" {
+                    vec!["run".into(), "build".into()]
+                } else {
+                    vec!["run".into(), "--silent".into(), "build".into()]
+                },
             })
         }
         _ => Err("unsupported project build backend"),

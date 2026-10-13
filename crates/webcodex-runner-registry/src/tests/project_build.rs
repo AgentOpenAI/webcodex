@@ -401,3 +401,82 @@ async fn python_project_build_capability_is_checked_for_planning_and_auto_discov
         .unwrap()
         .is_some());
 }
+
+#[tokio::test]
+async fn node_project_build_job_handoff_requires_additive_capability() {
+    for supported in [false, true] {
+        let registry = RunnerRegistry::default();
+        let mut registration = registration(true);
+        registration.capabilities.project_build_node_v1 = supported;
+        registry.register(registration).await.unwrap();
+
+        let mut plan = build_plan();
+        plan.provenance.request.adapter = ProjectBuildAdapter::Node;
+        plan.provenance.backend = "node".into();
+        plan.process = canonical_project_build_process("node", &plan.provenance.request).unwrap();
+        plan.provenance.invocation_digest = project_build_invocation_digest(&plan.process);
+        let result = registry
+            .start_job_with_metadata_for_access(
+                ShellJobOpRequest {
+                    login: false,
+                    op: "start".into(),
+                    client_id: Some("build-runner".into()),
+                    cwd: Some("/tmp/demo".into()),
+                    command: Some(String::new()),
+                    timeout_secs: Some(60),
+                    job_id: None,
+                    since_stdout_line: None,
+                    since_stderr_line: None,
+                    tail_lines: None,
+                    limit: None,
+                    codex: None,
+                },
+                "test".into(),
+                ShellJobStartMetadata {
+                    project_id: Some("agent:build-runner:demo".into()),
+                    project_cwd: Some(".".into()),
+                    purpose: Some("build".into()),
+                    shell: Some("direct_argv".into()),
+                    visibility: ShellJobVisibility::Public,
+                    structured_execution: Some(StructuredJobExecution::ProjectBuild(plan)),
+                    ..Default::default()
+                },
+                None,
+                None,
+            )
+            .await;
+
+        if supported {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            let error = result.unwrap_err();
+            assert!(error.starts_with("capability_unavailable:"), "{error}");
+            assert!(error.contains("Runner `build-runner`"), "{error}");
+            assert!(error.contains("project_build_node_v1"), "{error}");
+            assert!(error.contains("upgrade that Runner"), "{error}");
+            assert!(registry.list_jobs(Some(10)).await.is_empty());
+        }
+    }
+}
+
+#[tokio::test]
+async fn node_project_build_planning_requires_additive_capability() {
+    let registry = RunnerRegistry::default();
+    registry.register(registration(true)).await.unwrap();
+    let mut request = build_request();
+    request.adapter = ProjectBuildAdapter::Node;
+    let access = auth_context(None, true);
+    let error = registry
+        .enqueue_project_build_plan("build-runner".into(), request, Some(&access))
+        .await
+        .unwrap_err();
+    assert!(error.contains("project_build_node_v1"), "{error}");
+    assert!(registry
+        .poll(RunnerPollRequest {
+            client_id: "build-runner".into(),
+            runner_instance_id: "inst".into()
+        })
+        .await
+        .unwrap()
+        .is_none());
+}

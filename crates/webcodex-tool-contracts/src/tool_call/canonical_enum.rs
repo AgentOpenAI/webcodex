@@ -1544,7 +1544,7 @@ pub enum ToolCall {
         /// Project-relative directory; Runner resolves the nearest recipe root.
         #[serde(default)]
         cwd: Option<String>,
-        /// Omission means auto. Rust and Go are supported; Node/Python return unavailable.
+        /// Omission means auto. Supports Rust, Go, Python packaging and manifest-declared Node build scripts.
         #[serde(default)]
         adapter: Option<webcodex_core::project_build::ProjectBuildAdapter>,
         /// Optional portable scope: bounded explicit packages or all_packages=true, never both.

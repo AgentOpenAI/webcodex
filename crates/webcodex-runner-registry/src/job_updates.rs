@@ -508,7 +508,11 @@ fn validate_test_count_evidence(
         return Ok(());
     };
     let cargo_test = job.validation.as_ref().is_some_and(|metadata| {
-        metadata.adapter == "cargo_test" && metadata.kind == "test" && metadata.no_run != Some(true)
+        matches!(
+            metadata.adapter.as_str(),
+            "cargo_test" | "node:vitest:test" | "node:jest:test"
+        ) && metadata.kind == "test"
+            && metadata.no_run != Some(true)
     });
     if !cargo_test || !lifecycle.is_terminal() || !update.finished || !evidence.is_valid() {
         return invalid_progress("test_count_evidence_invalid");
@@ -862,6 +866,7 @@ impl RunnerRegistry {
             }) => Some(runner_instance_id.clone()),
             _ => None,
         };
+        let project_node_build_request = matches!(structured_execution.as_ref(), Some(StructuredJobExecution::ProjectBuild(plan)) if plan.provenance.backend == "node");
         let python_build_request = matches!(&structured_execution, Some(StructuredJobExecution::ProjectBuild(plan)) if plan.provenance.backend == "python");
         let project_build_request = matches!(
             structured_execution.as_ref(),
@@ -1364,6 +1369,16 @@ impl RunnerRegistry {
                 return Err("format_runner_replaced".into());
             }
         }
+        if project_node_build_request
+            && !runner
+                .runner_features
+                .supports(RunnerFeature::ProjectBuildNode)
+        {
+            return Err(capability_upgrade_error(
+                &client_id,
+                RunnerFeature::ProjectBuildNode,
+            ));
+        }
         if project_build_request && !runner.runner_features.supports(RunnerFeature::ProjectBuild) {
             return Err(capability_upgrade_error(
                 &client_id,
@@ -1542,12 +1557,24 @@ impl RunnerRegistry {
                 RunnerFeature::ProjectValidationPythonPytest,
             ));
         }
+        if validation_steps
+            .iter()
+            .any(|step| step.node_json_framework().is_some())
+            && !runner
+                .runner_features
+                .supports(RunnerFeature::ProjectValidationNodeJson)
+        {
+            return Err(capability_upgrade_error(
+                &client_id,
+                RunnerFeature::ProjectValidationNodeJson,
+            ));
+        }
         let node_test = validation
             .as_ref()
             .is_some_and(|v| v.adapter == "node:tap:test")
             || validation_steps
                 .iter()
-                .any(|step| step.program == "node" && step.name == "test");
+                .any(ShellJobValidationStep::is_structured_node_tap_test);
         if node_test
             && !runner
                 .runner_features

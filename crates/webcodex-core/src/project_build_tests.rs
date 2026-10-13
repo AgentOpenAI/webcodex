@@ -349,3 +349,61 @@ fn build_artifact_observations_are_bounded_private_and_never_validation_evidence
     )
     .is_err());
 }
+
+#[test]
+fn node_build_canonical_manager_process_rejects_extra_authority() {
+    let request = ProjectBuildRequest {
+        project_id: "demo".into(),
+        cwd: None,
+        adapter: ProjectBuildAdapter::Node,
+        scope: None,
+        dependency_policy: None,
+    };
+    for manager in ["npm", "pnpm", "yarn", "bun"] {
+        let process =
+            canonical_project_build_process_with_manager("node", &request, manager).unwrap();
+        assert_eq!(process.executable, manager);
+        assert_eq!(
+            process.args,
+            if manager == "yarn" {
+                vec!["run", "build"]
+            } else {
+                vec!["run", "--silent", "build"]
+            }
+        );
+    }
+    assert!(canonical_project_build_process_with_manager("node", &request, "npx").is_err());
+    let old: crate::runner_protocol::RunnerCapabilities =
+        serde_json::from_value(serde_json::json!({})).unwrap();
+    assert!(!old.project_build_node_v1 && !old.project_validation_node_json_v1);
+}
+
+#[test]
+fn node_build_provenance_rejects_explicit_backend_mismatch() {
+    let mut provenance = ProjectBuildProvenance {
+        request: ProjectBuildRequest {
+            project_id: "demo".into(),
+            cwd: None,
+            adapter: ProjectBuildAdapter::Node,
+            scope: None,
+            dependency_policy: None,
+        },
+        backend: "node".into(),
+        recipe_root: ".".into(),
+        root_digest: "a".repeat(64),
+        manifest_digest: "b".repeat(64),
+        invocation_digest: "c".repeat(64),
+    };
+    assert!(provenance.is_valid());
+    for adapter in [
+        ProjectBuildAdapter::Rust,
+        ProjectBuildAdapter::Go,
+        ProjectBuildAdapter::Python,
+    ] {
+        provenance.request.adapter = adapter;
+        assert!(!provenance.is_valid());
+    }
+    provenance.request.adapter = ProjectBuildAdapter::Node;
+    provenance.backend = "go".into();
+    assert!(!provenance.is_valid());
+}

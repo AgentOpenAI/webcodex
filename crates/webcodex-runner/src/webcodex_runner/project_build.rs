@@ -7,8 +7,8 @@ use super::shell::cwd_allowed;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use webcodex_core::project_build::{
-    canonical_project_build_process, project_build_invocation_digest, ProjectBuildAdapter,
-    ProjectBuildPlan, ProjectBuildPlanningResult, ProjectBuildProvenance, ProjectBuildRequest,
+    project_build_invocation_digest, ProjectBuildAdapter, ProjectBuildPlan,
+    ProjectBuildPlanningResult, ProjectBuildProvenance, ProjectBuildRequest,
 };
 use webcodex_core::runner_operation::RunnerJobOperation;
 use webcodex_workspace::project_recipe::{
@@ -67,17 +67,22 @@ pub(crate) fn plan(
         ProjectBuildAdapter::Auto => None,
         ProjectBuildAdapter::Rust => Some(ProjectRecipeId::Rust),
         ProjectBuildAdapter::Go => Some(ProjectRecipeId::Go),
+        ProjectBuildAdapter::Node => Some(ProjectRecipeId::Node),
         ProjectBuildAdapter::Python => Some(ProjectRecipeId::Python),
     };
+    if matches!(
+        request.adapter,
+        ProjectBuildAdapter::Auto | ProjectBuildAdapter::Node
+    ) {
+        webcodex_workspace::project_recipe::validate_node_project_marker_chain(
+            &root,
+            request.cwd.as_deref(),
+        )
+        .map_err(|_| unavailable("build_manifest_invalid", Some("node")))?;
+    }
     let resolved = resolve_project_recipe_root(&root, request.cwd.as_deref(), hint)
         .map_err(|error| unavailable(map_recipe_error(error), None))?;
     let backend = resolved.recipe;
-    if matches!(backend, ProjectRecipeId::Node) {
-        return Err(unavailable(
-            "build_adapter_unavailable",
-            Some(backend.as_str()),
-        ));
-    }
 
     if backend == ProjectRecipeId::Python {
         // Default `build` output is dist/. Never follow a pre-existing redirected
@@ -86,9 +91,29 @@ pub(crate) fn plan(
             .map_err(|_| unavailable("build_artifact_path_invalid", Some("python")))?;
     }
 
-    let process = canonical_project_build_process(backend.as_str(), request)
-        .map_err(|_| unavailable("build_scope_invalid", Some(backend.as_str())))?;
-    let manifest_digest = if backend == ProjectRecipeId::Rust
+    let node = if backend == ProjectRecipeId::Node {
+        if request.scope.is_some() {
+            return Err(unavailable("build_scope_unsupported", Some("node")));
+        }
+        if request.dependency_policy.is_some() {
+            return Err(unavailable("dependency_policy_unsupported", Some("node")));
+        }
+        Some(
+            webcodex_validation::resolve_node_project_build(&root, request.cwd.as_deref())
+                .map_err(|error| unavailable(error.code, Some("node")))?,
+        )
+    } else {
+        None
+    };
+    let process = webcodex_core::project_build::canonical_project_build_process_with_manager(
+        backend.as_str(),
+        request,
+        node.as_ref().map_or("npm", |(manager, _)| manager.as_str()),
+    )
+    .map_err(|_| unavailable("build_scope_invalid", Some(backend.as_str())))?;
+    let manifest_digest = if let Some((_, digest)) = node {
+        digest
+    } else if backend == ProjectRecipeId::Rust
         && request
             .scope
             .as_ref()

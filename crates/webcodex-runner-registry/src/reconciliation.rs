@@ -311,8 +311,10 @@ fn validate_snapshot(
             .validation
             .as_ref()
             .is_some_and(|metadata| {
-                metadata.adapter == "cargo_test"
-                    && metadata.kind == "test"
+                matches!(
+                    metadata.adapter.as_str(),
+                    "cargo_test" | "node:vitest:test" | "node:jest:test"
+                ) && metadata.kind == "test"
                     && metadata.no_run != Some(true)
             });
         if !cargo_test || !lifecycle.is_terminal() || !evidence.is_valid() {

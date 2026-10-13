@@ -2615,6 +2615,8 @@ impl RunnerRegistry {
         access: Option<&crate::RunnerAccess>,
     ) -> Result<(String, oneshot::Receiver<ShellRunResponse>), String> {
         payload.validate()?;
+        let requires_node =
+            payload.adapter == webcodex_core::project_build::ProjectBuildAdapter::Node;
         let requires_all_packages = payload
             .scope
             .as_ref()
@@ -2638,6 +2640,16 @@ impl RunnerRegistry {
             return Err(capability_upgrade_error(
                 &client_id,
                 RunnerFeature::ProjectBuild,
+            ));
+        }
+        if requires_node
+            && !runner
+                .runner_features
+                .supports(RunnerFeature::ProjectBuildNode)
+        {
+            return Err(capability_upgrade_error(
+                &client_id,
+                RunnerFeature::ProjectBuildNode,
             ));
         }
         if requires_python

@@ -11,6 +11,8 @@ fn project_build_rechecks_manifest_and_dependency_state_after_queueing() {
         ("Cargo.toml", "Cargo.lock", true, false),
         ("go.mod", "go.sum", false, false),
         ("go.mod", "go.sum", true, false),
+        ("package.json", "package-lock.json", false, false),
+        ("package.json", "package-lock.json", true, false),
         ("pyproject.toml", "setup.cfg", false, false),
         ("pyproject.toml", "setup.cfg", true, false),
         ("Cargo.toml", "Cargo.lock", false, true),
@@ -41,7 +43,15 @@ edition = "2021"
             )
             .unwrap();
         } else {
-            std::fs::write(root.join(marker), "").unwrap();
+            std::fs::write(
+                root.join(marker),
+                if marker == "package.json" {
+                    r#"{"packageManager":"npm@1","scripts":{"build":"node build.js"}}"#
+                } else {
+                    ""
+                },
+            )
+            .unwrap();
         }
         std::fs::write(root.join(dependency), "").unwrap();
         std::fs::write(
@@ -534,4 +544,98 @@ fn runner_real_process_python_project_build_fixtures() {
         assert_eq!(snapshot.job_id, "python-build");
         assert_eq!(snapshot.request_id, "python-build-request");
     }
+}
+
+#[test]
+#[ignore = "real-process Node/npm build fixture; requires installed Node and npm"]
+fn node_project_build_real_declared_script_and_no_adapter_installation() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("project");
+    let registry = root.join("registry");
+    std::fs::create_dir_all(&registry).unwrap();
+    std::fs::write(
+        root.join("package.json"),
+        r#"{"packageManager":"npm@11","scripts":{"build":"node build.cjs"}}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("build.cjs"), "const fs=require('fs');fs.writeFileSync('output.txt', [process.env.COREPACK_ENABLE_NETWORK,process.env.COREPACK_ENV_FILE,process.env.COREPACK_ENABLE_AUTO_PIN].join(','));").unwrap();
+    std::fs::write(
+        registry.join("demo.toml"),
+        format!(
+            "id='demo'\nname='Demo'\npath={}\nallow_patch=true\n",
+            serde_json::to_string(root.to_str().unwrap()).unwrap()
+        ),
+    )
+    .unwrap();
+    let mut shell = ShellConfig::default();
+    shell
+        .env
+        .insert("COREPACK_ENABLE_NETWORK".into(), "1".into());
+    shell
+        .env
+        .insert("COREPACK_ENABLE_AUTO_PIN".into(), "1".into());
+    let policy = RunnerPolicy {
+        allowed_roots: vec![root.clone()],
+        ..Default::default()
+    };
+    let request = ProjectBuildRequest {
+        project_id: "demo".into(),
+        cwd: None,
+        adapter: ProjectBuildAdapter::Node,
+        scope: None,
+        dependency_policy: None,
+    };
+    let (plan, cwd) =
+        crate::webcodex_runner::project_build::plan(&policy, &registry, &request).unwrap();
+    assert_eq!(plan.provenance.backend, "node");
+
+    let mut context = structured_process_context(&cwd, plan.process.args.len(), false);
+    context.runtime_project_id = Some("agent:structured-agent:demo".into());
+    context.project_cwd = Some(".".into());
+    context.purpose = Some("build".into());
+    context
+        .structured_execution
+        .as_mut()
+        .unwrap()
+        .execution_source = "project_build".into();
+    let operation = RunnerJobOperation::StartBuild(RunnerJobBuildOperation {
+        job_id: "node-build".into(),
+        cwd: Some(cwd.to_string_lossy().into_owned()),
+        process: plan.process,
+        provenance: plan.provenance,
+        timeout_secs: 10,
+        context,
+    });
+    let wire = RunnerRequest::from_operation(
+        RunnerInvocationMetadata {
+            request_id: "node-build-request".into(),
+            client_id: "structured-agent".into(),
+            requested_by: "test".into(),
+            created_at: chrono::Utc::now().timestamp(),
+        },
+        RunnerOperation::Job(operation),
+    )
+    .unwrap();
+
+    let manager = JobManager::new(1);
+    let (sink, _rx) = structured_test_sink("structured-agent", "structured-instance");
+    manager.enqueue(
+        sink,
+        PendingJobStart::from_wire(1, policy, shell, SshConfig::default(), registry, wire),
+    );
+    assert!(manager.wait_for_workers(Instant::now() + Duration::from_secs(15)));
+    let snapshot = lock_unpoison(&manager.jobs)
+        .get("node-build")
+        .unwrap()
+        .snapshot
+        .clone();
+    manager.stop_all();
+
+    assert_eq!(snapshot.status, "completed", "{snapshot:?}");
+    assert_eq!(
+        std::fs::read_to_string(root.join("output.txt")).unwrap(),
+        "0,0,0"
+    );
+    assert!(!root.join("node_modules").exists());
+    assert!(!root.join("package-lock.json").exists());
 }
