@@ -771,8 +771,21 @@ pub(crate) async fn oauth_authorize_consent(
         }
     };
 
-    let decision = form_field(&pairs, "decision").unwrap_or("").to_string();
-    let is_allow = decision == "allow";
+    let mut decisions = pairs
+        .iter()
+        .filter(|(key, _)| key == "decision")
+        .map(|(_, value)| value.as_str());
+    let is_allow = match (decisions.next(), decisions.next()) {
+        (Some("allow"), None) => true,
+        (Some("deny"), None) => false,
+        _ => {
+            res.status_code(StatusCode::BAD_REQUEST);
+            res.render(Json(
+                serde_json::json!({"error": "invalid consent decision"}),
+            ));
+            return;
+        }
+    };
 
     // Reconstruct the authorize query from the submitted hidden fields and
     // revalidate client / redirect_uri / scope / PKCE from scratch.

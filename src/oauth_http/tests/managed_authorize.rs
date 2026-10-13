@@ -1,5 +1,107 @@
 use super::*;
 
+#[test]
+fn oauth_consent_input_isolation_excludes_query_controls_from_all_forms() {
+    let query = format!(
+        "{}&bridge=shared_key&decision=allow&computer_permission=launch&shared_key=synthetic&project_credential=synthetic&unexpected=synthetic",
+        valid_authorize_query()
+    );
+    let scopes = vec!["runtime:read".to_string()];
+    let pages = [
+        super::super::html::authorize_consent_html(
+            "client",
+            "id",
+            "https://example.com/callback",
+            &scopes,
+            None,
+            &query,
+        ),
+        super::super::html::authorize_project_share_html(
+            "client",
+            "id",
+            "https://example.com/callback",
+            &scopes,
+            None,
+            &query,
+            None,
+        ),
+        super::super::html::authorize_bridge_html(
+            "client",
+            "id",
+            "https://example.com/callback",
+            &scopes,
+            &[],
+            None,
+            &query,
+            None,
+        ),
+    ];
+    for page in pages {
+        for control in [
+            "decision",
+            "computer_permission",
+            "shared_key",
+            "project_credential",
+            "unexpected",
+        ] {
+            assert!(
+                !page.contains(&format!("type=\"hidden\" name=\"{control}\"")),
+                "request query became a consent control: {control}"
+            );
+        }
+        assert!(page.contains("type=\"hidden\" name=\"client_id\""));
+        assert!(page.contains("type=\"hidden\" name=\"code_challenge\""));
+        assert!(page.contains("type=\"hidden\" name=\"bridge\" value=\"shared_key\""));
+    }
+}
+
+#[tokio::test]
+async fn oauth_consent_input_isolation_rejects_ambiguous_or_invalid_decisions() {
+    for decisions in [
+        "decision=allow&decision=deny",
+        "decision=deny&decision=allow",
+        "decision=allow&decision=allow",
+        "decision=unexpected",
+        "",
+    ] {
+        let config = test_config(oauth2_enabled());
+        let (_tmp, db) = test_db();
+        let user = seed_user(&db, "alice");
+        let token = seed_user_token(&db, &user);
+        let client = seed_client_with_redirects_and_scopes(
+            &db,
+            &user,
+            "https://example.com/callback",
+            "runtime:read",
+        );
+        let service = Service::new(build_router(config, db.clone()));
+        let return_to = return_to_for(&client, "https://example.com/callback");
+        let login = post_form(
+            "http://localhost/oauth/authorize/login",
+            form_body(&[("return_to", &return_to), ("token", &token)]),
+        )
+        .send(&service)
+        .await;
+        let cookie = format!(
+            "{}={}",
+            AUTHORIZE_SESSION_COOKIE,
+            set_cookie_value(&login, AUTHORIZE_SESSION_COOKIE).expect("session cookie")
+        );
+        let body = format!(
+            "{}&{decisions}",
+            consent_form_body(&client, "https://example.com/callback", "deny")
+                .replace("&decision=deny", "")
+        );
+        let response =
+            post_form_with_cookie("http://localhost/oauth/authorize/consent", body, &cookie)
+                .send(&service)
+                .await;
+        assert_eq!(auth_code_count(&db), 0, "ambiguous consent issued a code");
+        assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+        assert_no_location(&response);
+    }
+}
+
 #[tokio::test]
 async fn oauth_authorize_without_bearer_or_session_returns_login_page() {
     let config = test_config(oauth2_enabled());

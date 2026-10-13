@@ -1,5 +1,83 @@
 use super::*;
 
+#[tokio::test]
+async fn oauth_consent_input_isolation_does_not_grant_unchecked_query_permission() {
+    let config = test_config(oauth2_enabled_bridge());
+    let (_tmp, db) = test_db();
+    let shared_key = "synthetic-consent-key";
+    let requested = bridge_oauth_computer_enabled_scopes().join(" ");
+    let (client, _) = seed_shared_key_bridge_client(
+        &db,
+        shared_key,
+        "https://consent.example/callback",
+        &requested,
+    );
+    let registry = Arc::new(crate::RunnerRegistry::default());
+    register_shared_key_runner_with_capabilities(
+        &registry,
+        shared_key,
+        "consent-runner",
+        "consent-instance",
+        all_optional_computer_capabilities(),
+    )
+    .await;
+    let service = Service::new(build_router_with_session_and_registry(
+        config,
+        db.clone(),
+        Arc::new(AuthorizeSessionStore::new()),
+        registry,
+    ));
+    let url = format!(
+        "{}&computer_permission=launch&shared_key=attacker",
+        valid_bridge_authorize_url(&client, "https://consent.example/callback", &requested)
+    );
+    let mut get = TestClient::get(&url).send(&service).await;
+    assert_eq!(get.status_code, Some(StatusCode::OK));
+    let html = get.take_string().await.unwrap();
+    let mut form = url::form_urlencoded::Serializer::new(String::new());
+    // Submit exactly the page's hidden controls and the user's credential,
+    // leaving every optional checkbox unchecked.
+    for line in html
+        .lines()
+        .filter(|line| line.contains(r#"type="hidden""#))
+    {
+        let name = line
+            .split(r#"name=""#)
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap();
+        let value = line
+            .split(r#"value=""#)
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'");
+        form.append_pair(name, &value);
+    }
+    form.append_pair("shared_key", shared_key);
+    let response = post_form("http://localhost/oauth/authorize/bridge", form.finish())
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::FOUND));
+    let location = url::Url::parse(&location_header(&response).unwrap()).unwrap();
+    let code = location
+        .query_pairs()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1
+        .into_owned();
+    let scopes = auth_code_by_plaintext(&db, &code).scopes;
+    assert!(!scopes
+        .split_whitespace()
+        .any(|scope| scope == "computer:launch"));
+}
+
 #[test]
 fn bridge_shared_key_hash_matches_shared_key_visibility_hash() {
     assert_eq!(
