@@ -132,8 +132,45 @@ Wire command/response schemas, status acknowledgement rules and standalone
 `ProtocolCompatible` deadline semantics are unchanged. Embedded WebCodex continues
 to require finite command deadlines, capped at 120 seconds. No command is locally
 replayed after possible dispatch. A response retry is not an MCP execution retry.
-An uncertain marker requires operator reconciliation, never an automatic cleanup
-intended to make restart appear successful.
+The local/embedded OpenAI adapter enables durable request admission before local
+dispatch. Its v3 fence binds the same control-plane origin, Tunnel, local MCP URL
+and local credential to a checksummed receipt journal. After the old process is
+definitely absent, it validates the journal and archives the exact stale run
+under the ownership lock before starting another run. Previously admitted
+request IDs are suppressed across both clean and abrupt restarts. Old task
+results remain unconfirmed; automatic connection recovery never replays an old
+effect or claims successful completion. Retries with a new request ID are not
+covered by this guarantee.
+
+On Windows, the v3 marker also records process creation time. A reused PID after
+reboot is not mistaken for the old owner; inaccessible or unobservable process
+state still cannot authorize recovery.
+
+The immutable protected-history header lives in the per-Tunnel lock file,
+independently of `.active`, and survives clean stops. It is synced before the
+first journal can be created or any request admitted. Existing protection makes
+receipt history mandatory on every later start. Missing/corrupt protection with
+surviving protected state, interrupted initialization and changed bindings remain blocked;
+they never become fresh admission authority. Valid older-journal restore and
+complete private-state rollback are outside this local guarantee; protected files
+must not be restored independently. A bounded directory containing only valid,
+exact v2 archives proves explicit legacy reconciliation and permits first
+initialization of protected history; empty, invalid or v3 archives do not.
+
+Automatic archival is limited to 128 files and 64 KiB of marker contents per
+Tunnel, with a 4-KiB per-marker bound. A bounded, read-only preflight checks the
+budget before receipt-tail repair or active-marker movement. Exhaustion reports
+capacity failure and preserves the active marker, receipts, permanent protection
+and archives; no forensic history is automatically deleted.
+
+Legacy v2 markers without durable receipts still require explicit operator
+reconciliation. Missing/corrupt journals, changed bindings, live/unknown owners
+and exhausted receipt capacity fail closed. Receipts are never automatically
+evicted, and filesystem sync durability remains a prerequisite. The default
+library, standalone CLI and temporary `webcodex share` retain their
+unprotected/manual recovery behavior. Share credentials intentionally change on
+every invocation: a clean stop allows another share, while an uncertain share
+still requires explicit reconciliation. This never downgrades protected history.
 
 ## Focused validation
 

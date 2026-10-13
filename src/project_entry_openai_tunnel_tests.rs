@@ -1,5 +1,85 @@
 use super::*;
 
+fn prepared_client(
+    root: &Path,
+    credential: &str,
+    recovery: OpenAiTunnelRecovery,
+) -> Result<(TunnelClient, webcodex_openai_tunnel::run_fence::RunFence), ProductError> {
+    let prerequisites = OpenAiTunnelPrerequisites::bound(
+        "tunnel_0123456789abcdef0123456789abcdef".into(),
+        "fixture-control".into(),
+        ControlPlaneProxy::Direct,
+    )?;
+    OpenAiTunnel::prepare_client(
+        &prerequisites,
+        "http://127.0.0.1:8080/mcp",
+        credential,
+        root,
+        recovery,
+    )
+}
+
+#[test]
+fn temporary_share_restarts_cleanly_with_a_fresh_local_credential() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    for credential in ["first-share", "second-share"] {
+        let (client, guard) =
+            prepared_client(&root, credential, OpenAiTunnelRecovery::TemporaryShare).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&std::fs::read(guard.path()).unwrap())
+                .unwrap()["version"],
+            2
+        );
+        drop(client);
+        guard.finish().unwrap();
+    }
+}
+
+#[test]
+fn temporary_share_preserves_uncertain_and_protected_history() {
+    for recovery in [
+        OpenAiTunnelRecovery::TemporaryShare,
+        OpenAiTunnelRecovery::Durable,
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        let (client, guard) = prepared_client(&root, "old-credential", recovery).unwrap();
+        let path = guard.path().to_owned();
+        let saved = std::fs::read(&path).unwrap();
+        drop(client);
+        drop(guard);
+        assert!(prepared_client(
+            &root,
+            "new-credential",
+            OpenAiTunnelRecovery::TemporaryShare
+        )
+        .is_err());
+        assert_eq!(std::fs::read(path).unwrap(), saved);
+    }
+}
+
+#[test]
+fn clean_durable_history_cannot_be_rebound_or_downgraded_for_a_share() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let (client, guard) =
+        prepared_client(&root, "old-credential", OpenAiTunnelRecovery::Durable).unwrap();
+    let path = guard.path().to_owned();
+    drop(client);
+    guard.finish().unwrap();
+    drop(guard);
+    let history = std::fs::read(path.with_extension("lock")).unwrap();
+    for recovery in [
+        OpenAiTunnelRecovery::TemporaryShare,
+        OpenAiTunnelRecovery::Durable,
+    ] {
+        assert!(prepared_client(&root, "new-credential", recovery).is_err());
+    }
+    assert!(!path.exists());
+    assert_eq!(std::fs::read(path.with_extension("lock")).unwrap(), history);
+}
+
 #[tokio::test]
 async fn cancelled_stop_retains_the_owned_task_for_drop_cleanup() {
     let temp = tempfile::tempdir().unwrap();
@@ -77,6 +157,33 @@ fn diagnostics_do_not_contain_authority_material() {
         let product = tunnel_error(error);
         assert!(!product.message.contains("Bearer"));
         assert!(!product.message.contains("https://"));
+    }
+}
+
+#[test]
+fn automatic_recovery_never_treats_the_live_host_or_zero_pid_as_absent() {
+    let mut identity = webcodex_openai_tunnel::run_fence::RunIdentity {
+        version: 3,
+        run_id: uuid::Uuid::new_v4().to_string(),
+        owner_pid: 0,
+        receipt_binding: Some("0".repeat(64)),
+        owner_started: current_owner_started(),
+    };
+    assert!(!owner_absent(&identity));
+    identity.owner_pid = std::process::id();
+    assert!(!owner_absent(&identity));
+    #[cfg(windows)]
+    {
+        let started = identity
+            .owner_started
+            .expect("Windows process creation time");
+        identity.owner_started = Some(started + 1);
+        assert!(
+            owner_absent(&identity),
+            "a reused PID is a different process instance"
+        );
+        identity.owner_pid = u32::MAX;
+        assert!(owner_absent(&identity));
     }
 }
 
