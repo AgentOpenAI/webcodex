@@ -32,9 +32,9 @@ pub use adapters::{
 };
 #[cfg(any(feature = "session-evidence", test))]
 pub use evidence::{
-    current_validation_evidence_for_session, event_is_job_acceptance_only,
-    event_observes_validation_activity, extract_validation_events, skipped_validation_summary,
-    validation_kind_for_tool, validation_summary_for_session_events,
+    complete_failure_identity_for_session_event, current_validation_evidence_for_session,
+    event_is_job_acceptance_only, event_observes_validation_activity, extract_validation_events,
+    skipped_validation_summary, validation_kind_for_tool, validation_summary_for_session_events,
     validation_summary_from_events, CurrentValidationEvidenceProjection, ValidationEvent,
 };
 pub use recipe::{

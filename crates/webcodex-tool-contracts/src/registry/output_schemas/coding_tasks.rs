@@ -9,7 +9,7 @@ use super::common::{
 #[cfg(any(test, feature = "root-test-support"))]
 use super::common::{
     authority_profile_schema, exploration_tool_name_schema, permission_decision_schema,
-    session_hint_schema,
+    session_hint_schema, task_context_schema,
 };
 use super::files::{
     key_file_schema, path_kind_schema, project_type_schema, scan_schema, suggested_read_schema,
@@ -778,6 +778,7 @@ fn startup_continuation_schema(detail: &str) -> Value {
     json!({
         "type": "object",
         "properties": {
+            "task": {"anyOf":[task_context_schema(), {"type":"null"}]},
             "status": {"type": "string", "enum": ["available", "not_applicable", "unknown"]},
             "reason_code": nullable_schema("string", "Stable reason when continuation is not available."),
             "instruction": {
@@ -874,6 +875,7 @@ fn startup_continuation_schema(detail: &str) -> Value {
             )
         },
         "required": [
+            "task",
             "status",
             "reason_code",
             "instruction",
