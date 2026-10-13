@@ -297,6 +297,19 @@ pub fn task_outcome_schema(description: &str) -> Value {
     })
 }
 
+pub(super) fn acceptance_evidence_schema() -> Value {
+    json!({
+        "type": "object", "additionalProperties": false,
+        "description": "Advisory acceptance-evidence readiness, separate from execution terminal state and task_outcome. ready_for_review never means natural-language requirements accepted. Existing suggested_next_actions/handoff_brief supply recovery actions; evidence_refs name existing sections without copying evidence. Source unproven, stale, incomplete or unknown cannot establish readiness.",
+        "properties": {
+            "state": {"type": "string", "enum": ["ready_for_review", "needs_evidence", "failed", "not_applicable"]},
+            "reason_codes": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "enum": ["workspace_unobserved", "review_missing", "validation_failed", "validation_stale", "source_unproven", "validation_not_run", "validation_inconclusive", "validation_unknown", "validation_evidence_incomplete", "zero_tests", "outputs_invalid", "outputs_historical", "outputs_unverified", "history_partial", "snapshot_changed", "closeout_blocked", "integrity_warning", "no_task_session"]}},
+            "evidence_refs": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"type": "string", "enum": ["workspace", "validation", "review_evidence", "task_outputs"]}}
+        },
+        "required": ["state", "reason_codes", "evidence_refs"]
+    })
+}
+
 pub fn evidence_history_schema(description: &str) -> Value {
     json!({
         "type": "object",

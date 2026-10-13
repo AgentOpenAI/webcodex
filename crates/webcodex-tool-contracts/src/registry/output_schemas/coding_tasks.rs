@@ -1,10 +1,10 @@
 use serde_json::{json, Value};
 
 use super::common::{
-    array_schema, continuation_feedback_schema, evidence_history_schema, evidence_integrity_schema,
-    handoff_brief_schema, job_lifecycle_summary_schema, nullable_schema, open_object_schema,
-    permission_summary_schema, schema_type, session_execution_context_schema, task_outcome_schema,
-    wrapped_output_schema,
+    acceptance_evidence_schema, array_schema, continuation_feedback_schema,
+    evidence_history_schema, evidence_integrity_schema, handoff_brief_schema,
+    job_lifecycle_summary_schema, nullable_schema, open_object_schema, permission_summary_schema,
+    schema_type, session_execution_context_schema, task_outcome_schema, wrapped_output_schema,
 };
 #[cfg(any(test, feature = "root-test-support"))]
 use super::common::{
@@ -66,6 +66,7 @@ pub(super) fn output_schema_for_tool(name: &str) -> Option<Value> {
     match name {
         "work_on_project" => Some(work_on_project_output_schema()),
         "finish_coding_task" => Some(wrapped_output_schema(vec![
+            ("acceptance", acceptance_evidence_schema()),
             ("task_outputs", task_outputs_schema()),
             ("goal_follow_up", super::goals::active_goal_context_schema()),
             (

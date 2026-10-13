@@ -1364,6 +1364,11 @@ async fn finish_coding_task_requires_explicit_session_and_returns_structured_fie
     let validation = &result.output["validation"];
     assert_eq!(validation["available"], false);
     assert_eq!(validation["status"], "not_run");
+    assert_eq!(result.output["acceptance"]["state"], "needs_evidence");
+    assert!(result.output["acceptance"]["reason_codes"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("validation_not_run")));
     assert_eq!(validation["reason"], "no_validation_tool_invoked");
     assert_eq!(validation["source"], "session_ledger");
     assert_eq!(validation["events_total"], 0);

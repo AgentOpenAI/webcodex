@@ -127,6 +127,11 @@ fn output_guidance_preserves_unproven_validation_and_rejects_invalid_receipts() 
     });
     let original = finish_from_fixture(&canonical);
     assert_eq!(original["task_outcome"]["status"], "warn");
+    assert_eq!(original["acceptance"]["state"], "needs_evidence");
+    assert_eq!(
+        compact_finish_output(&original)["acceptance"],
+        original["acceptance"]
+    );
     assert!(original["suggested_next_actions"]
         .as_array()
         .unwrap()
