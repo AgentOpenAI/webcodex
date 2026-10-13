@@ -825,7 +825,12 @@ fn observe_jobs_output_schema() -> Value {
                         "type": "string",
                         "enum": ["immediate", "updated", "terminal", "item_error", "timeout"]
                     },
-                    "waited_ms": {"type": "integer", "minimum": 0}
+                    "waited_ms": {"type": "integer", "minimum": 0},
+                    "update_kind": {
+                        "type": "string",
+                        "enum": ["meaningful_change", "heartbeat", "change"],
+                        "description": "Present only on updated waits. Describes the triggering update over the full batch, including items omitted by the output budget."
+                    }
                 },
                 "required": ["outcome", "waited_ms"],
                 "description": "The single shared-wait fact for this batch. terminal policy never wakes updated: timeout means the deadline elapsed and may coexist with changed=true and cumulative log deltas. Item errors take precedence over terminal, then timeout. Final item outputs are snapshots and do not expose a second wait outcome."
@@ -880,6 +885,10 @@ fn observe_jobs_output_schema() -> Value {
                         "type": "integer",
                         "minimum": 1,
                         "description": "Non-zero shared wait duration; omitted when the canonical value is zero."
+                    },
+                    "update_kind": {
+                        "type": "string",
+                        "enum": ["meaningful_change", "heartbeat", "change"]
                     }
                 },
                 "required": ["outcome"],
