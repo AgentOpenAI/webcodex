@@ -679,8 +679,8 @@ pub struct OpenAiHostFileRef {
 }
 
 /// Adapter-derived provenance for host file references. This is deliberately
-/// skipped by serde on ToolCall: caller/model JSON can never grant either trust
-/// path, and the two host mechanisms cannot impersonate one another.
+/// skipped by serde on ToolCall: caller/model JSON can never grant any trust
+/// path, and the host mechanisms cannot impersonate one another.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, JsonSchema)]
 pub enum HostFileImportProvenance {
     #[default]
@@ -688,6 +688,9 @@ pub enum HostFileImportProvenance {
 
     /// Authenticated MCP OAuth client that may import only from OpenAI file hosts.
     AuthenticatedMcpOpenAiHostFile,
+    /// Loopback Desktop/Secure-Tunnel trust. Public HTTPS remains allowed, while
+    /// OpenAI file hosts may additionally resolve through the RFC 2544 fake-IP pool.
+    LoopbackTrustedMcpHostFile,
     /// Explicitly allowlisted MCP client that may import from arbitrary public HTTPS.
     TrustedMcpHostFile,
 }

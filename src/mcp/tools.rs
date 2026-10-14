@@ -1614,7 +1614,7 @@ pub(super) fn mcp_host_file_import_trust_decision_from_state(
         if let Some((trusted_reason, non_loopback_reason)) = loopback_reasons {
             if config.is_loopback_bound() {
                 return HostFileImportTrustDecision {
-                    trust: HostFileImportTrust::TrustedMcpHostFile,
+                    trust: HostFileImportTrust::LoopbackTrustedMcpHostFile,
                     reason: trusted_reason,
                     ..base
                 };
