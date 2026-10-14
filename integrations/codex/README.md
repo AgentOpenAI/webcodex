@@ -246,3 +246,12 @@ client UI, bind the exact independent local conversation, perform a minimal real
 read, verify one report through actual MCP, and retain `unknown` when no receipt is
 available. Verify the wrong-project and offline cases separately. Do not exercise
 this candidate against a production server that lacks the new endpoints.
+
+## Explicit experience proposals
+
+The optional [experience proposal adapter](EXPERIENCE_PROPOSALS.md)
+([中文](EXPERIENCE_PROPOSALS.zh-CN.md)) stores operator/current-Host candidates as
+Session proposals. An explicit exact-version/destination approval promotes one
+candidate through native Memory CAS or a guarded project Skill definition write.
+It does not extract transcripts or call a model; unresolved effect receipts block
+blind retries. This is independent of handoff generation and recovery Hooks.
