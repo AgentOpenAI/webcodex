@@ -1412,6 +1412,12 @@ fn tool_call_session_id_accessor_covers_session_tool_specs() {
         let call = ToolCall::from_tool_name(&spec.name, sample_tool_args_with_session(&spec.name))
             .unwrap_or_else(|e| panic!("{} should deserialize: {}", spec.name, e));
         let expected = match spec.name.as_str() {
+            "control_browser" => {
+                // Handoff independently authorizes its exact owner Session as
+                // a Runner-local resource association, not a generic recorder
+                // or execution Session target.
+                None
+            }
             "list_jobs" => {
                 // list_jobs.session_id is an exact metadata filter over the
                 // already-authorized Job set. It deliberately does not opt into
