@@ -48,7 +48,7 @@ resource tests still verify content, metadata, admission and native delivery.
 | Computer | `ui://webcodex/computer/v12` (unchanged template) |
 | Results | `ui://webcodex/changes/v4` |
 | Work Result | `ui://webcodex/work-result/v14` |
-| Goal Plan | `ui://webcodex/goal-plan/v7` |
+| Goal Plan | `ui://webcodex/goal-plan/v8` |
 | Agent continuation | `ui://webcodex/agent-continuation/v20` |
 | Job terminal continuation | `ui://webcodex/job-terminal-continuation/v2` |
 

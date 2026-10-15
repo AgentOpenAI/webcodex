@@ -293,7 +293,7 @@ test("Goal continuity keeps Host-carrier readiness visible when activity evidenc
   const view = app("mcp_goal_plan_app.html");
   await view.initialize();
   view.toolResult({ goal_plan: unavailable });
-  assert.equal(view.nodes["auto-resume"].textContent, "Ready");
+  assert.equal(view.nodes["auto-resume"].textContent, "Ready · not a guarantee");
   assert.equal(view.nodes["continuity-state"].textContent, "Unavailable");
   assert.equal(view.nodes.activity.textContent, "Window activity observation unavailable.");
   assert.notEqual(view.nodes.status.textContent, "Invalid Goal Plan state");
@@ -312,7 +312,7 @@ test("Goal continuity refreshes on the same authoritative revision without equat
   const view = app("mcp_goal_plan_app.html");
   await view.initialize();
   view.toolResult({ goal_plan: readyPlan });
-  assert.equal(view.nodes["auto-resume"].textContent, "Ready");
+  assert.equal(view.nodes["auto-resume"].textContent, "Ready · not a guarantee");
   assert.equal(view.nodes["continuity-state"].textContent, "Ready");
 
   await view.fireTimers(12000);
