@@ -134,7 +134,8 @@ class GenericSmoke(InteractiveSmoke):
         self.env["WEBCODEX_MCP_HOST_PROFILE"] = "host_code_mode"
         self.start_server()
         check(self.post("/api/users/create", {"username": "generic-owner"}, self.bootstrap).get("success"), "create user")
-        self.owner = self.pat("generic-owner", SCOPES)
+        scopes = SCOPES + (["communication:read", "communication:manage"] if self.args.goal_plan_only else [])
+        self.owner = self.pat("generic-owner", scopes)
         agent = self.post("/api/agent-tokens/create", {"username": "generic-owner", "client_id": "generic-runner", "name": "generic-fixture"}, self.bootstrap)
         check(isinstance(agent.get("token"), str), "Runner enrollment")
         self.project_dir = self.root / "project"
@@ -188,6 +189,82 @@ class GenericSmoke(InteractiveSmoke):
         if out.get("execution_state") == "pending":
             out = self.terminal(out["job_id"])
         return out
+
+    def goal_plan_revision(self):
+        prepared = self.call("prepare_goal_workflow", {
+            "session_id": self.session_ref, "title": "Revise after evidence",
+            "objective": "Recover the same Goal after changing unfinished milestones",
+            "completion_conditions": ["Revision, replay, card and handoff protocol assertions pass"],
+            "steps": [{"id": name, "title": name} for name in ["inspect", "implement", "verify"]],
+            "idempotency_key": "goal-plan-create"})
+        goal = prepared["goal"]["summary"]["goal_id"]
+        checkpointed = self.call("checkpoint_goal", {"goal_id": goal, "expected_revision": 1,
+            "completed_step_ids": ["inspect"], "current_step_id": "implement",
+            "summary": "Inspection found a new validation requirement", "idempotency_key": "goal-plan-progress"})
+        request = {"goal_id": goal, "expected_revision": 2, "reason": "Inspection changes remaining work",
+            "steps": [{"id": "inspect", "title": "inspect"}, {"id": "verify", "title": "Validate new evidence"},
+                      {"id": "review", "title": "Review resulting work"}], "idempotency_key": "goal-plan-revise"}
+        revised = self.call("revise_goal_plan", request)
+        current = revised["goal"]
+        check(current["summary"]["revision"] == 3, "replacement must increment once")
+        check([s["status"] for s in current["plan"]["steps"]] == ["completed", "pending", "pending"], "replacement changed retained/new progress")
+        check(current["plan_history"]["revisions"][0]["plan"] == checkpointed["goal"]["plan"], "prior snapshot lost")
+        check(current["plan_history"]["total_count"] == current["plan_history"]["returned_count"] == 1, "history metadata")
+        replay = self.call("revise_goal_plan", request)
+        check(replay["replayed"] and not replay["state_changed"] and replay["goal"] == current, "exact replay mutated")
+        conflict = self.call("revise_goal_plan", request | {"reason": "Changed payload"}, success=False)
+        check(conflict["error_kind"] == "goal_idempotency_conflict", "changed key did not conflict")
+        stale = self.call("revise_goal_plan", request | {"idempotency_key": "goal-plan-stale"}, success=False)
+        check(stale["error_kind"] == "goal_revision_changed", "stale replacement did not fail closed")
+        invalid = self.call("revise_goal_plan", request | {"expected_revision": 3, "steps": [], "idempotency_key": "goal-plan-invalid"}, success=False)
+        check(invalid["error_kind"] == "invalid_goal_plan", "completed entry removal accepted")
+        observed = self.call("get_goal", {"goal_id": goal})["goal"]
+        check(observed == current, "negative requests partially mutated Goal")
+        card = self.call("present_goal_plan", {"goal_id": goal})["goal_plan"]
+        check(card["steps"] == current["plan"]["steps"] and card["current_step_id"] is None, "card did not converge")
+        handoff = self.call("read_session_handoff", {"project": self.project_ref, "session_id": self.session_ref, "include_workspace": False})
+        recovered = handoff["goal_context"]["goal"]
+        check(recovered["revision"] == 3 and recovered["plan"]["current_step_id"] is None, "handoff recovered stale revision/current step")
+        check([(s["id"], s["title"], s["status"]) for s in recovered["plan"]["steps"]["items"]]
+              == [(s["id"], s["title"], s["status"]) for s in current["plan"]["steps"]], "handoff recovered stale steps")
+        # The preceding real protocol/card/handoff assertions are this fixture's
+        # verification and review. They make no claim about source-code validation.
+        checkpointed_remaining = self.call("checkpoint_goal", {"goal_id": goal, "expected_revision": 3,
+            "completed_step_ids": ["verify", "review"],
+            "summary": "Protocol assertions passed: revision/replay safety and exact card/handoff recovery reviewed",
+            "idempotency_key": "goal-plan-finish-progress"})["goal"]
+        check(checkpointed_remaining["summary"]["revision"] == 4
+              and all(step["status"] == "completed" for step in checkpointed_remaining["plan"]["steps"]),
+              "revised remaining steps did not checkpoint to completed")
+        check(checkpointed_remaining["plan"]["steps"][0] == current["plan"]["steps"][0],
+              "later checkpoint rewrote completed inspection")
+        completed = self.call("update_goal", {"goal_id": goal, "expected_revision": 4,
+            "lifecycle": "completed", "terminal_reason": "Verified real MCP revision/replay safety and current card/handoff convergence",
+            "idempotency_key": "goal-plan-complete"})["goal"]
+        check(completed["summary"]["revision"] == 5 and completed["summary"]["lifecycle"] == "completed"
+              and completed["summary"]["terminal_at_unix_ms"] is not None, "same Goal did not explicitly terminalize")
+        check(completed["plan"] == checkpointed_remaining["plan"]
+              and completed["plan_history"] == current["plan_history"], "terminal closeout changed plan/history")
+        terminal_card = self.call("present_goal_plan", {"goal_id": goal})["goal_plan"]
+        check(terminal_card["goal_id"] == goal and terminal_card["revision"] == 5
+              and terminal_card["lifecycle"] == "completed" and terminal_card["terminal_at_unix_ms"] is not None
+              and terminal_card["steps"] == completed["plan"]["steps"]
+              and terminal_card["completed_step_count"] == terminal_card["total_step_count"] == 3
+              and terminal_card["current_step_id"] is None, "terminal card did not reflect revised completed plan")
+        late = self.call("revise_goal_plan", request | {"expected_revision": 5,
+            "reason": "Attempt plan change after completion", "idempotency_key": "goal-plan-after-terminal"}, success=False)
+        check(late["error_kind"] == "goal_terminal" and not late["state_changed"], "terminal Goal accepted a new plan revision")
+        check(self.call("get_goal", {"goal_id": goal})["goal"] == completed, "terminal rejection changed durable truth")
+        historical_replay = self.call("revise_goal_plan", request)
+        check(historical_replay["replayed"] and not historical_replay["state_changed"]
+              and historical_replay["goal"] == completed, "historical revision replay mutated terminal Goal")
+        return {"goal_id": goal, "plan_revision": 3, "revision": 5, "lifecycle": "completed",
+                "history_count": 1, "exact_replay_inert": True, "stale_and_changed_replay_rejected": True,
+                "completed_removal_atomic": True, "card_and_handoff_converged": True,
+                "revised_remaining_steps_completed": True, "terminal_goal_and_card_converged": True,
+                "late_terminal_revision_rejected": True, "historical_replay_after_terminal_inert": True,
+                "verification": "actual protocol, card and handoff assertions; no source-code validation claim",
+                "transport": "real stateless MCP gateway; no model API or ACP"}
 
     def files(self):
         src = self.project_dir / "input"
@@ -428,6 +505,7 @@ def main():
     parser.add_argument("--bin-dir", type=Path, default=ROOT / "target/dogfood")
     parser.add_argument("--server", type=Path)
     parser.add_argument("--runner", type=Path)
+    parser.add_argument("--goal-plan-only", action="store_true", help="Run only bounded Goal revision MCP acceptance after disposable setup")
     parser.add_argument("--profile", choices=["baseline", "upgraded"], required=True)
     parser.add_argument("--source-version", required=True, help="Actual source/build identity, including dirty state")
     parser.add_argument("--report", type=Path, required=True)
@@ -448,16 +526,19 @@ def main():
                            "crates/webcodex-core/src/desktop_runtime_contract/tests.rs",
                            "crates/webcodex-browser/src/supervisor/tests/batch.rs",
                            "plugins/agent-browser/tests/core.test.mjs"]}}
+    if args.goal_plan_only:
+        report["expected_negative_cases"] = ["changed plan revision replay", "stale plan revision", "completed step removal", "new plan revision after terminal completion"]
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="webcodex-generic-agent-") as directory:
         smoke = GenericSmoke(args, Path(directory).resolve())
         try:
             smoke.prepare()
-            for name, operation in [("mixed_files_conflict", smoke.files), ("encoded_csv", smoke.data),
+            cases = [("goal_plan_revision", smoke.goal_plan_revision)] if args.goal_plan_only else [("mixed_files_conflict", smoke.files), ("encoded_csv", smoke.data),
                     ("failure_repair_log_pressure", smoke.failure_logs), ("pending_independent_join", smoke.pending),
-                    ("code_repair_review", smoke.coding), ("stale_read_revision", smoke.stale_edit)]:
+                    ("code_repair_review", smoke.coding), ("stale_read_revision", smoke.stale_edit)]
+            for name, operation in cases:
                 smoke.case(name, operation)
-            if args.profile == "upgraded":
+            if args.profile == "upgraded" and not args.goal_plan_only:
                 smoke.case("extra_missing_output", smoke.missing_output, extra=True)
                 smoke.case("extra_large_output_retention", smoke.large_output, extra=True)
             report["correctness"] = "passed"

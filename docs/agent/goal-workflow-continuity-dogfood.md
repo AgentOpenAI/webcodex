@@ -69,7 +69,7 @@ remains a separate card and the only Host turn-dispatch carrier.
 
 ## Deterministic regression scenarios
 
-The Store tests cover plan bounds, fixed ids, one current step, atomic validation
+The Store tests cover plan bounds, retained stable ids, one current step, atomic validation
 before mutation, revision competition, exact/changed keyed replay, reopen,
 malformed persisted plans and completion/terminal gates. G6 additionally covers one
 transactional Goal + exact Session admission at revision 1, explicit/omitted owned
@@ -147,5 +147,58 @@ Job/Project truth only as needed. Continue from the latest checkpoint/current st
 A disappeared turn does not establish failure: never replay an uncertain previous
 effect merely because it disappeared. Stalled is not offline, heartbeat is not
 authority, and continuation is a fresh reasoning opportunity rather than a retry.
+
+## Plan revision acceptance through real ChatGPT MCP
+
+Use an authorized development Runtime build exposing `revise_goal_plan` in its
+current manifest and a real ChatGPT chat connected through MCP. This acceptance
+uses the chat's own model allowance; do not configure model API/ACP providers or
+an agent/model loop. Local deterministic tests and loopback MCP fixtures cannot
+prove that the live ChatGPT model follows this workflow. Record the exact build,
+chat evidence and tool results; do not report this lane as passed before it ran.
+
+Give the chat this bounded task:
+
+> In a disposable authorized project, explicitly use one durable Goal to write a
+> tiny text report from sample data, validate its calculations, and review the
+> output. Start with inspect, implement, validate and review milestones. Checkpoint
+> inspection before continuing. After inspecting, introduce one extra malformed
+> sample and revise the unfinished plan to add a separate input-validation step;
+> explain the revision reason and preserve completed inspection. Continue using
+> the same Goal and Session. Show the refreshed Goal Plan card. Stop before final
+> completion and save enough evidence to recover in another chat.
+
+Observe one exact Goal/Session admission, completed inspection retaining id/title,
+a full ordered `revise_goal_plan` at the current revision, new pending validation,
+retained status for existing ids, exactly one revision increment, and the prior
+snapshot/reason in `get_goal.plan_history`. Repeat the exact same revision request
+and key to verify inert replay; changed payload with that key and a fresh-key stale
+revision must fail without changing current truth. An attempted completed-step
+removal must fail atomically. A second chat with the same canonical authority must
+explicitly select/recover the same Session and Goal, see the revised plan through
+handoff/card, and continue from current durable state. Fresh validation and review
+must precede explicit checkpoints and Goal completion. New revision attempts after
+completion must fail; historical exact replay remains read-only. Verify no duplicate
+Goal, ACP run, paid model request, task spawn or inferred carrier setup occurred.
+
+For a reproducible real-process transport lane without a model, extend the existing
+generic-Agent fixture only through its bounded Goal case:
+
+```sh
+python3 scripts/e2e_generic_agent_ws.py --goal-plan-only --profile upgraded \
+  --bin-dir /path/to/dogfood --source-version ACTUAL_BUILD_ID \
+  --report /tmp/goal-plan-revision-report.json
+```
+
+That lane uses disposable real Server/Runner and stateless MCP gateway calls. It
+checks replay/conflict/stale/invalid atomicity, history and card/handoff convergence.
+After those real protocol observations pass, it checkpoints the revised remaining
+steps, explicitly completes the same Goal, verifies the terminal card/current plan,
+and rejects a fresh late revision while historical exact replay remains inert. Its
+verification/review consists of the fixture's actual protocol/card/handoff assertions;
+it makes no source-code validation claim. Four negative tool results are expected:
+changed replay, stale revision, completed-step removal and new revision after
+terminal completion. It does not establish real ChatGPT model acceptance or
+authorize deployment.
 
 Optional bounded timing diagnosis and the ChatGPT acceptance scenario are described in [MCP diagnostics](../MCP.md#goal-and-agent-continuation-timing-diagnostics).

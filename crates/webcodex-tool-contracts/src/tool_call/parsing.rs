@@ -507,6 +507,7 @@ impl ToolCall {
             Self::PresentGoalPlan { .. } => "present_goal_plan",
             Self::GoalPlanSync { .. } => "sync_goal_plan",
             Self::CheckpointGoal { .. } => "checkpoint_goal",
+            Self::ReviseGoalPlan { .. } => "revise_goal_plan",
             Self::OpenWebcodexWorkbench { .. } => "open_webcodex_workbench",
             Self::SearchWebcodexResources { .. } => "search_webcodex_resources",
             Self::ReadWebcodexResource { .. } => "read_webcodex_resource",

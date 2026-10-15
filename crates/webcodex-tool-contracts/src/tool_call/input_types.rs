@@ -1445,7 +1445,7 @@ pub struct ComputerSnapshotRegion {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GoalStepInputCall {
-    /// Stable step id, fixed for the lifetime of this Goal plan.
+    /// Stable step id; retained ids preserve status and completed ids cannot be removed or renamed.
     #[schemars(regex(pattern = "^[A-Za-z0-9_-]{1,32}$"))]
     pub id: String,
     /// Bounded plan milestone, not a Task instruction or execution selector.

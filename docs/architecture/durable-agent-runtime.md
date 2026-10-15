@@ -247,8 +247,8 @@ Goal
     checkpoint_at_unix_ms?
 ```
 
-The full encoded plan is at most 32 KiB. Conditions and step structure are fixed at
-creation; all steps initially are pending. Natural-language conditions are durable
+The full encoded plan is at most 32 KiB. Completion conditions remain fixed at
+creation; the initial plan starts pending and unfinished structure can be revised. Natural-language conditions are durable
 completion intent, not predicates the Server claims to evaluate.
 
 `checkpoint_goal(goal_id, expected_revision, idempotency_key,
@@ -262,6 +262,34 @@ one in the same batch. Unknown, duplicate, invalid or contradictory selectors fa
 closed. Stale revisions reject the write. Exact keyed replay is read-only (including
 historical replay after terminalization); changed reuse conflicts. Every new-key
 checkpoint is one new recovery point, even when its selected steps are unchanged.
+
+`revise_goal_plan(goal_id, expected_revision, idempotency_key, reason, steps)`
+replaces the entire ordered step list of an exact owned active Goal. It preserves
+completion intent, checkpoint summary/time and retained step statuses/timestamps.
+Every completed id and its exact title must remain; completed steps may be reordered
+but cannot be deleted, renamed or regressed. Unfinished steps may be renamed,
+reordered or removed, and new ids start pending. Removing the current step leaves
+no current step; a later explicit checkpoint may select one. Existing step count,
+id/title and encoded-plan limits still apply. The bounded reason is 1..2048 UTF-8
+bytes. Validation, replacement, exactly one revision increment, prior snapshot and
+keyed replay record commit in one IMMEDIATE transaction. Stale revisions require
+re-reading current truth and reconsidering the plan; same-key exact replay is inert,
+including after terminalization, while changed reuse conflicts. Terminal Goals are
+immutable. No Task, execution, Session or continuation authority is implied.
+
+The Store retains the eight most recent prior plan snapshots with their prior Goal
+revision, revision reason and replacement time. `get_goal` and mutation results add
+`plan_history`: newest-first `revisions`, lifetime `total_count`, `returned_count`
+and `truncated`. Retention pruning never removes keyed replay identity. Reads pin
+current plan and history to one SQLite snapshot. Reads bound
+each plan to 32 KiB and reason to 2 KiB before DB text materialization/JSON decoding,
+inspect at most nine rows to detect overflow, and return only a newest contiguous
+prefix under a separate 64 KiB serialized-snapshot budget. Omitted entries are
+explicitly truncated; malformed retained history fails closed even when it would
+be outside the output budget. Current Goal Plan cards, handoff and closeout derive
+from the same current plan and keep their existing sparse/read budgets. Additive
+schema migration gives pre-existing Goals zero history without rewriting their
+plans or saved identities; see [compatibility policy](../compatibility-policy.md).
 
 Persisted plans are bounded before decoding and validate the sole field shape,
 unique ids, closed status values, timestamp/checkpoint consistency and single

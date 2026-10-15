@@ -736,6 +736,33 @@ impl ToolRuntime {
         }
     }
 
+    pub(crate) fn revise_goal_plan(
+        &self,
+        auth: Option<&AuthContext>,
+        goal_id: String,
+        expected_revision: i64,
+        replacement: crate::db::GoalPlanReplacement,
+        idempotency_key: String,
+    ) -> ToolResult {
+        let principal = match goal_principal(auth) {
+            Ok(principal) => principal,
+            Err(result) => return result,
+        };
+        let Some(db) = self.communication_db.as_ref() else {
+            return goal_store_unavailable();
+        };
+        match db.revise_goal_plan(
+            &principal,
+            &goal_id,
+            expected_revision,
+            replacement,
+            &idempotency_key,
+        ) {
+            Ok(result) => serialized_goal_success(result),
+            Err(error) => goal_error(error, RecoveryKind::RetrySame),
+        }
+    }
+
     pub(crate) fn get_goal(&self, auth: Option<&AuthContext>, goal_id: String) -> ToolResult {
         let principal = match goal_principal(auth) {
             Ok(principal) => principal,
