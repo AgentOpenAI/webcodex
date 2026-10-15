@@ -10,8 +10,11 @@ import argparse
 import csv
 import hashlib
 import io
+import itertools
 import json
 from pathlib import Path
+import os
+import stat
 import subprocess
 import struct
 import sys
@@ -20,8 +23,16 @@ import time
 import zlib
 from urllib.error import HTTPError
 from urllib.request import Request
-from e2e_job_input_ws import InteractiveSmoke, SCOPES
-from e2e_session_continuity_ws import ROOT, check
+# Support both direct smoke execution and package import by the benchmark.
+_import_path_added = str(Path(__file__).resolve().parent) not in sys.path
+if _import_path_added:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from e2e_job_input_ws import InteractiveSmoke, SCOPES
+    from e2e_session_continuity_ws import ROOT, check
+finally:
+    if _import_path_added:
+        sys.path.remove(str(Path(__file__).resolve().parent))
 
 BASELINE = "05d45f376d3265490de28090b9c5b0150dbacd8b"
 UPSTREAM = "05d45f37"
@@ -56,6 +67,133 @@ def binary_fixtures():
         pdf += f"{offset:010d} 00000 n \n".encode()
     pdf += f"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n".encode()
     return {"pixel.png": png, "document.pdf": pdf, "bytes.bin": bytes(range(256)) * 4}
+
+
+GENERIC_CASES = frozenset(("generic_mixed_files_conflict", "generic_encoded_csv",
+    "generic_failure_repair", "generic_pending_independent_join",
+    "generic_stale_read_revision", "generic_missing_output"))
+
+
+def pressure_script(failed=True):
+    script = f"for i in range(2500): print('pressure-' + str(i))\nprint({SENTINEL!r})\n"
+    return "import sys\n" + script + ("print('expected failure',file=sys.stderr)\nsys.exit(7)\n" if failed else "")
+
+
+class GenericFixture:
+    """Pure disposable fixture preparation/oracles shared by smoke and Host capture.
+
+    No service, runtime, credential or report ownership. Temporal tool proof is
+    deliberately separate from final filesystem correctness.
+    """
+    MAX_BYTES = 1024 * 1024
+
+    def __init__(self, root, case_id):
+        if case_id not in GENERIC_CASES:
+            raise ValueError("unsupported generic fixture")
+        self.root, self.case_id = Path(root), case_id
+        self.initial = {}
+        self.external_written = False
+        self.rejection_checked = False
+
+    def prepare(self):
+        initial = {}
+        if self.case_id == "generic_mixed_files_conflict":
+            initial = {"input/note.txt": b"original note\n", "sorted/note.txt": b"keep conflict\n"}
+            initial.update({"input/" + name: data for name, data in binary_fixtures().items()})
+        elif self.case_id == "generic_encoded_csv":
+            initial = {"a.csv": b"name,value\nAlice,2\nBob,3\n",
+                       "b.csv": "姓名,数量\n陈,5\n丁,7\n".encode("utf-16")}
+        elif self.case_id == "generic_stale_read_revision":
+            initial = {"stale.txt": b"task value: before\n"}
+        for name, data in initial.items():
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        self.initial = initial
+        return self
+
+    def read(self, name):
+        # Reject symlink parents, special files and oversized fixture outputs.
+        path = self.root / name
+        for parent in [path, *path.parents]:
+            if parent == self.root:
+                break
+            if parent.is_symlink():
+                raise ValueError("fixture symlink")
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(path, flags)
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise ValueError("fixture file is not regular")
+            data = handle.read(self.MAX_BYTES + 1)
+        if len(data) > self.MAX_BYTES:
+            raise ValueError("fixture file exceeds oracle limit")
+        return data
+
+    def append_external(self):
+        if self.external_written or not hasattr(os, "O_NOFOLLOW"):
+            raise ValueError("external write boundary unavailable")
+        flags = os.O_RDWR | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0)
+        fd = os.open(self.root / "stale.txt", flags)
+        with os.fdopen(fd, "r+b") as handle:
+            if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+                raise ValueError("external write target is not regular")
+            if handle.read(self.MAX_BYTES + 1) != self.initial["stale.txt"]:
+                raise ValueError("external write boundary changed")
+            handle.seek(0)
+            handle.truncate()
+            handle.write(self.initial["stale.txt"] + (EXTERNAL_SENTINEL + "\n").encode())
+            handle.flush()
+            os.fsync(handle.fileno())
+        self.external_written = True
+
+    def check_rejected_bytes(self):
+        self.rejection_checked = (self.external_written and self.read("stale.txt") ==
+            self.initial["stale.txt"] + (EXTERNAL_SENTINEL + "\n").encode())
+        if not self.rejection_checked:
+            raise ValueError("rejected edit changed external bytes")
+
+    def oracle(self):
+        checks = []
+        def exact(name, expected):
+            try:
+                passed = self.read(name) == expected
+            except (OSError, ValueError):
+                passed = False
+            checks.append({"path": name, "passed": passed})
+        for name, data in self.initial.items():
+            if name != "stale.txt":
+                exact(name, data)
+        if self.case_id == "generic_mixed_files_conflict":
+            for name, data in binary_fixtures().items():
+                exact("sorted/" + name, data)
+            exact("sorted/note-2.txt", b"original note\n")
+            for name, count in (("input", 4), ("sorted", 5)):
+                try:
+                    with os.scandir(self.root / name) as entries:
+                        actual = sum(1 for _ in itertools.islice(entries, count + 1))
+                except OSError:
+                    actual = None
+                checks.append({"kind": "file_count", "path": name, "passed": actual == count})
+        elif self.case_id == "generic_encoded_csv":
+            exact("merged.csv", "name,value\nAlice,2\nBob,3\n陈,5\n丁,7\n".encode())
+            try:
+                valid = json.loads(self.read("report.json")) == {"count": 4, "total": 17}
+            except (OSError, ValueError):
+                valid = False
+            checks.append({"path": "report.json", "passed": valid})
+        elif self.case_id == "generic_pending_independent_join":
+            exact("independent.txt", b"independent work completed")
+        elif self.case_id == "generic_stale_read_revision":
+            exact("stale.txt", b"task value: after\n" + (EXTERNAL_SENTINEL + "\n").encode())
+            checks.append({"kind": "external_writer_coordination", "passed": self.external_written and self.rejection_checked})
+        elif self.case_id == "generic_missing_output":
+            checks.append({"path": "missing-result.csv", "passed": not os.path.lexists(self.root / "missing-result.csv")})
+        temporal = self.case_id in {"generic_failure_repair", "generic_pending_independent_join",
+                                   "generic_stale_read_revision", "generic_missing_output"}
+        return {"available": bool(checks), "passed": all(c["passed"] for c in checks) if checks else None,
+                "checks": checks, "reason": "temporal/receipt proof requires runtime evidence" if temporal else None,
+                "temporal_evidence_required": temporal}
 
 
 def totals(calls):
@@ -190,6 +328,48 @@ class GenericSmoke(InteractiveSmoke):
             out = self.terminal(out["job_id"])
         return out
 
+    def entry_read_recovery(self):
+        self.rpc_id += 1
+        rejected = self.post("/mcp", {"jsonrpc": "2.0", "id": self.rpc_id,
+            "method": "tools/call", "params": {"name": "work_on_project", "arguments": {
+                "path": "/private/selector-canary", "instruction": "inspect fixture"}}}, self.owner)
+        diagnostic = json.dumps(rejected)
+        check("missing client_id required with path" in diagnostic and "list_projects" in diagnostic,
+              "selector rejection lost authorized discovery guidance")
+        check("selector-canary" not in diagnostic, "selector rejection echoed private path")
+        self.call("list_projects", {}, direct=False)
+        recovered = self.call("work_on_project", {"project": self.project_ref,
+            "session_id": self.session_ref, "instruction": "Resume the exact fixture Session"}, direct=True)
+        check(recovered["session_ref"] == self.session_ref, "recovery replaced the original Session")
+        path = self.project_dir / "continuation.txt"
+        lines = ["first", "second", "third", "fourth", "fifth"]
+        path.write_text("\n".join(lines) + "\n")
+        arguments = {"project": self.project_ref, "session_id": self.session_ref,
+                     "items": [{"path": "continuation.txt", "limit": 2}]}
+        actual, revision, read_count = [], None, 0
+        for _ in range(4):
+            result = self.call("read_files", arguments, direct=True)
+            read_count += 1
+            item = result["items"][0]["output"]
+            revision = revision or item["read_revision"]
+            check(item["read_revision"] == revision, "continuation changed snapshot")
+            actual.extend(item["text"].splitlines())
+            if not item["has_more"]:
+                break
+            follow = result["suggested_call"]
+            check(follow["tool"] == "read_files" and follow["follow_up_kind"] == "mechanically_followable",
+                  "partial read lost exact mechanical continuation")
+            check(follow["arguments"]["items"][0]["expected_read_revision"] == revision,
+                  "continuation omitted original snapshot fence")
+            arguments = follow["arguments"]
+        check(actual == lines and read_count == 3, "continuation skipped or repeated lines")
+        handoff = self.call("read_session_handoff", {"project": self.project_ref,
+            "session_id": self.session_ref, "include_workspace": False})
+        check(bool(handoff.get("session_id")), "exact Session recovery omitted identity")
+        return {"selector_rejected_without_path_echo": True, "authorized_discovery_recovered": True,
+                "original_session_reused": True, "exact_fenced_read_calls": read_count,
+                "lines_recovered": len(actual), "handoff_recovered": True}
+
     def goal_plan_revision(self):
         prepared = self.call("prepare_goal_workflow", {
             "session_id": self.session_ref, "title": "Revise after evidence",
@@ -267,14 +447,9 @@ class GenericSmoke(InteractiveSmoke):
                 "transport": "real stateless MCP gateway; no model API or ACP"}
 
     def files(self):
+        fixture = GenericFixture(self.project_dir, "generic_mixed_files_conflict").prepare()
         src = self.project_dir / "input"
-        src.mkdir()
-        (src / "note.txt").write_text("original note\n")
-        for name, payload in binary_fixtures().items():
-            (src / name).write_bytes(payload)
         destination = self.project_dir / "sorted"
-        destination.mkdir()
-        (destination / "note.txt").write_text("keep conflict\n")
         original = {p.name: sha(p) for p in src.iterdir()}
         for name in binary_fixtures():
             self.call("transfer_project_artifact", {"source_project": self.project_ref,
@@ -287,12 +462,12 @@ class GenericSmoke(InteractiveSmoke):
         check(sha(destination / "note-2.txt") == original["note.txt"], "text copy SHA")
         check((destination / "note.txt").read_text() == "keep conflict\n", "conflict overwritten")
         check(len(list(src.iterdir())) == 4 and len(list(destination.iterdir())) == 5, "independent file counts")
+        check(fixture.oracle()["passed"], "shared files oracle")
         return {"input_sha256": original, "output_sha256": {p.name: sha(p) for p in destination.iterdir()},
                 "input_count": 4, "output_count": 5, "conflict_preserved": True, "binary_path": "artifact transfer"}
 
     def data(self):
-        (self.project_dir / "a.csv").write_text("name,value\nAlice,2\nBob,3\n", encoding="utf-8")
-        (self.project_dir / "b.csv").write_bytes("姓名,数量\n陈,5\n丁,7\n".encode("utf-16"))
+        fixture = GenericFixture(self.project_dir, "generic_encoded_csv").prepare()
         inputs = {p: sha(self.project_dir / p) for p in ["a.csv", "b.csv"]}
         self.script("import csv,json\nrows=[]\nfor file,encoding,n,v in [('a.csv','utf-8','name','value'),('b.csv','utf-16','姓名','数量')]:\n with open(file,encoding=encoding,newline='') as f:\n  rows.extend({'name':r[n],'value':int(r[v])} for r in csv.DictReader(f))\nwith open('merged.csv','w',encoding='utf-8',newline='') as f:\n w=csv.DictWriter(f,fieldnames=['name','value'],lineterminator='\\n');w.writeheader();w.writerows(rows)\nwith open('report.json','w',encoding='utf-8') as f: json.dump({'count':len(rows),'total':sum(r['value'] for r in rows)},f)\n")
         expected = "name,value\nAlice,2\nBob,3\n陈,5\n丁,7\n".encode()
@@ -315,14 +490,15 @@ class GenericSmoke(InteractiveSmoke):
             for item in receipt.get("items", []):
                 check(item.get("status") == "verified" and item.get("sha256") == sha(self.project_dir / item["path"]),
                       "finish output SHA disagrees with independent file check")
+        check(fixture.oracle()["passed"], "shared CSV oracle")
         return {"count": 4, "total": 17, "input_sha256": inputs,
                 "output_sha256": sha(self.project_dir / "merged.csv"),
                 "finish_outputs_requested": self.args.profile == "upgraded"}
 
     def failure_logs(self):
-        failed = self.script(f"import sys\nfor i in range(2500): print('pressure-' + str(i))\nprint({SENTINEL!r})\nprint('expected failure',file=sys.stderr)\nsys.exit(7)\n", success=False)
+        failed = self.script(pressure_script(), success=False)
         check(failed.get("exit_code") == 7, "nonzero command lost exit status")
-        fixed = self.script(f"for i in range(2500): print('pressure-' + str(i))\nprint({SENTINEL!r})\n")
+        fixed = self.script(pressure_script(False))
         check(fixed.get("exit_code", 0) == 0, "repair failed")
         calls = [c for c in self.calls if c["scenario"] == self.scenario]
         check(any(c["sentinel_occurrences"] for c in calls), "unique tail sentinel missing from actual MCP envelope")
@@ -367,16 +543,16 @@ class GenericSmoke(InteractiveSmoke):
             self.project_ref, self.session_ref = saved
 
     def stale_edit(self):
+        fixture = GenericFixture(self.project_dir, "generic_stale_read_revision").prepare()
         path = self.project_dir / "stale.txt"
-        initial = b"task value: before\n"
-        path.write_bytes(initial)
+        initial = fixture.initial["stale.txt"]
         read_args = {"project": self.project_ref, "items": [{"path": "stale.txt"}]}
         before = self.call("read_files", read_args, direct=True)
         revision = before["items"][0]["output"]["read_revision"]
         # Fixture-side write bypasses all tool caches: model/tool success alone
         # cannot prove preservation of a concurrent external writer's change.
         external = initial + (EXTERNAL_SENTINEL + "\n").encode()
-        path.write_bytes(external)
+        fixture.append_external()
         changes = [{"kind": "edit", "path": "stale.txt", "expected_read_revision": revision,
             "edits": [{"kind": "replace_exact", "old_text": "task value: before",
                        "new_text": "task value: after"}]}]
@@ -385,6 +561,7 @@ class GenericSmoke(InteractiveSmoke):
         check(rejected.get("error_kind") == "stale_file_revision", "stale edit rejection kind")
         check(rejected.get("state_changed") is False, "stale edit claimed a mutation")
         check(path.read_bytes() == external, "stale edit changed external writer bytes")
+        fixture.check_rejected_bytes()
         fresh = self.call("read_files", read_args, direct=True)
         fresh_revision = fresh["items"][0]["output"]["read_revision"]
         check(fresh_revision != revision, "fresh read retained stale revision")
@@ -392,6 +569,7 @@ class GenericSmoke(InteractiveSmoke):
         self.call("edit_project_files", edit_args, direct=True)
         expected = external.replace(b"task value: before", b"task value: after")
         check(path.read_bytes() == expected, "fresh edit lost external writer bytes or task change")
+        check(fixture.oracle()["passed"], "shared stale recovery oracle")
         return {"initial_sha256": hashlib.sha256(initial).hexdigest(),
                 "external_sha256": hashlib.sha256(external).hexdigest(), "final_sha256": sha(path),
                 "rejected_error_kind": rejected["error_kind"], "rejected_bytes_unchanged": True,
@@ -500,6 +678,21 @@ class GenericSmoke(InteractiveSmoke):
 
 
 
+def selected_smoke_cases(smoke, *, goal_plan_only):
+    """Keep the independent Goal acceptance and ordinary recovery lanes distinct."""
+    if goal_plan_only:
+        return [("goal_plan_revision", smoke.goal_plan_revision)]
+    return [
+        ("entry_read_recovery", smoke.entry_read_recovery),
+        ("mixed_files_conflict", smoke.files),
+        ("encoded_csv", smoke.data),
+        ("failure_repair_log_pressure", smoke.failure_logs),
+        ("pending_independent_join", smoke.pending),
+        ("code_repair_review", smoke.coding),
+        ("stale_read_revision", smoke.stale_edit),
+    ]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin-dir", type=Path, default=ROOT / "target/dogfood")
@@ -518,7 +711,7 @@ def main():
         "source_version": args.source_version, "baseline_reference": BASELINE, "upstream_reference": UPSTREAM,
         "binary_sha256": {name: sha(getattr(args, name)) for name in ["server", "runner"]},
         "fixture_script_sha256": sha(Path(__file__)),
-        "expected_negative_cases": ["exit 7 command", "broken add validation", "stale read_revision edit"],
+        "expected_negative_cases": ["invalid project selector", "exit 7 command", "broken add validation", "stale read_revision edit"],
         "comparison_caveat": "Use upgraded for both current versions to compare identical output assertions. The baseline profile and baseline_reference identify the historical pre-output contract; do not pool different profiles. source_version identifies the actual build.",
         "measurement": "Actual JSON-RPC MCP response body bytes, including all content blocks and structuredContent; no credential/header capture",
         "unmeasured": {"desktop_browser": "Outside this loopback file/command acceptance; real Desktop/browser/ChatGPT Host behavior unmeasured",
@@ -533,9 +726,7 @@ def main():
         smoke = GenericSmoke(args, Path(directory).resolve())
         try:
             smoke.prepare()
-            cases = [("goal_plan_revision", smoke.goal_plan_revision)] if args.goal_plan_only else [("mixed_files_conflict", smoke.files), ("encoded_csv", smoke.data),
-                    ("failure_repair_log_pressure", smoke.failure_logs), ("pending_independent_join", smoke.pending),
-                    ("code_repair_review", smoke.coding), ("stale_read_revision", smoke.stale_edit)]
+            cases = selected_smoke_cases(smoke, goal_plan_only=args.goal_plan_only)
             for name, operation in cases:
                 smoke.case(name, operation)
             if args.profile == "upgraded" and not args.goal_plan_only:

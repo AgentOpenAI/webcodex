@@ -1611,6 +1611,29 @@ fn work_on_project_parses_path_source_and_rejects_ambiguous_sources() {
 }
 
 #[test]
+fn work_on_project_selector_rejection_explains_discovery_without_guessing_authority() {
+    for arguments in [
+        json!({"path": "/private/selector-canary", "instruction": "inspect"}),
+        json!({"client_id": "runner", "instruction": "inspect"}),
+        json!({"instruction": "inspect"}),
+        json!({"project": "agent:runner:project", "path": "/private/selector-canary", "instruction": "inspect"}),
+    ] {
+        let error = ToolCall::from_tool_name("work_on_project", arguments).unwrap_err();
+        assert!(error.starts_with("invalid arguments for tool 'work_on_project':"));
+        assert!(error.contains("list_projects"));
+        assert!(error.contains("not evidence that a Runner is offline"));
+        assert!(error.contains("canonical project id or issued project_ref"));
+        assert!(!error.contains("selector-canary"));
+    }
+    let valid = ToolCall::from_tool_name(
+        "work_on_project",
+        json!({"project": "agent:runner:project", "instruction": "inspect"}),
+    )
+    .unwrap();
+    assert_eq!(valid.project(), Some("agent:runner:project"));
+}
+
+#[test]
 fn session_execution_context_parses_as_strongly_typed_replacement() {
     let ssh = ToolCall::from_tool_name(
         "update_session_context",
