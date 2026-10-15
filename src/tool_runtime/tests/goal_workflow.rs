@@ -881,6 +881,23 @@ async fn goal_workflow_unobserved_or_stale_card_never_wakes_even_when_attention_
     assert_eq!(goal_activity(&state)["state"], "attention_needed");
     assert_no_attention(&fixture.recheck(now).await);
     fixture.poll(now - crate::db::GOAL_CARD_OBSERVATION_LEASE_MS - 1);
+    let observations = std::sync::Mutex::new(Vec::new());
+    assert!(fixture
+        .db
+        .record_goal_workflow_stalled_diagnosed(
+            &fixture.principal(),
+            &fixture.candidate(T0),
+            || now,
+            |reason, age, margin| observations.lock().unwrap().push((reason, age, margin)),
+        )
+        .unwrap()
+        .is_none());
+    let observations = observations.into_inner().unwrap();
+    assert!(observations.contains(&("observation_checked", Some(75_001), Some(-1))));
+    assert!(observations
+        .iter()
+        .any(|(reason, _, _)| *reason == "observation_ineligible"));
+
     assert_no_attention(&fixture.recheck(now).await);
     // Unrelated transport activity is not a live Goal Plan View.
     record_goal_window_event(
