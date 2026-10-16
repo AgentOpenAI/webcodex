@@ -432,6 +432,297 @@ class KnowledgeTests(Fixture):
             self.provider.read("long.md", knowledge.digest((self.root / "long.md").read_bytes()), 1, 1)
 
 
+class RefreshTests(Fixture):
+    def rows(self, table):
+        with sqlite3.connect(self.provider.database) as connection:
+            return connection.execute("SELECT * FROM " + table + " ORDER BY rowid").fetchall()
+
+    def test_first_refresh_builds_and_default_index_still_rebuilds(self):
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["mode"], coverage["updated_files"], coverage["reused_files"], coverage["remaining_files"]),
+                         ("refresh", 2, 0, 0))
+        coverage = self.provider.index()["coverage"]
+        self.assertEqual((coverage["mode"], coverage["updated_files"], coverage["reused_files"]), ("rebuild", 2, 0))
+        with self.assertRaises(knowledge.KnowledgeError):
+            self.provider.index(mode="unsupported")
+
+    def test_unchanged_refresh_hashes_bytes_and_preserves_chunk_and_fts_rows(self):
+        self.provider.index()
+        before = (self.rows("chunks"), self.rows("search"))
+        original_source = self.provider.source
+        with patch.object(self.provider, "source", wraps=original_source) as source:
+            with patch.object(knowledge, "chunk_text", side_effect=AssertionError("unchanged text was chunked")):
+                with patch.object(knowledge, "terms", side_effect=AssertionError("unchanged text was tokenized")):
+                    coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual(source.call_count, 2)
+        self.assertEqual((coverage["reused_files"], coverage["updated_files"], coverage["deleted_files"], coverage["remaining_files"]), (2, 0, 0, 0))
+        self.assertEqual(before, (self.rows("chunks"), self.rows("search")))
+        self.assertEqual(self.provider.status()["coverage"], coverage)
+        self.assertEqual(self.provider.database.stat().st_mode & 0o777, 0o600)
+
+    def test_add_change_delete_rename_and_sensitive_sources_refresh(self):
+        self.provider.index()
+        self.write("src/model.py", "changedneedle\n")
+        self.write("new.md", "addedneedle\n")
+        self.git("mv", "docs/guide.md", "docs/renamed.md")
+        self.git("add", "new.md")
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["updated_files"], coverage["deleted_files"], coverage["indexed_files"]), (3, 1, 3))
+        self.assertEqual(self.provider.search("parseHTTPRequest")["hits"], [])
+        self.assertEqual(self.provider.search("项目知识")["hits"][0]["path"], "docs/renamed.md")
+        self.assertTrue(self.provider.search("addedneedle")["hits"])
+        self.git("rm", "--cached", "docs/renamed.md")
+        (self.root / "docs/renamed.md").unlink()
+        self.write("src/model.py", "api_key='abcdefghijklmnop'\n")
+        self.git("mv", "new.md", "secret.md")
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["deleted_files"], coverage["indexed_files"], coverage["skipped_files"]), (3, 0, 1))
+        self.assertEqual(self.rows("chunks"), [])
+        self.assertEqual(self.rows("search"), [])
+        self.assertEqual(self.provider.search("changedneedle")["hits"], [])
+        # Missing working-tree bytes, even while tracked, also remove cached rows.
+        self.write("src/model.py", "restoredneedle\n")
+        self.provider.index(mode="refresh")
+        (self.root / "src/model.py").unlink()
+        self.assertEqual(self.provider.index(mode="refresh")["coverage"]["deleted_files"], 1)
+
+    def test_same_stat_and_head_do_not_hide_content_changes(self):
+        self.provider.index()
+        path = self.root / "src/model.py"
+        before = path.stat()
+        revision = self.git("rev-parse", "HEAD")
+        text = path.read_text().replace("parseHTTPRequest", "otherHTTPRequest")
+        self.assertEqual(len(text.encode()), before.st_size)
+        path.write_text(text)
+        os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["updated_files"], coverage["reused_files"]), (1, 1))
+        self.assertEqual(self.git("rev-parse", "HEAD"), revision)
+        self.assertTrue(self.provider.search("otherHTTPRequest")["hits"])
+        self.assertNotIn("parsehttprequest", " ".join(row[0] for row in self.rows("search")))
+
+    def test_refresh_failure_keeps_exact_old_database(self):
+        self.provider.index()
+        self.write("src/model.py", "changedneedle\n")
+        before = self.provider.database.read_bytes()
+        with patch.object(knowledge, "chunk_text", side_effect=sqlite3.OperationalError("private diagnostic")):
+            with self.assertRaisesRegex(knowledge.KnowledgeError, "previous complete index"):
+                self.provider.index(mode="refresh")
+        self.assertEqual(self.provider.database.read_bytes(), before)
+        self.assertFalse(list(self.provider.cache.glob("build-*")))
+        self.assertEqual(self.provider.search("parseHTTPRequest")["hits"], [])
+        self.assertTrue(self.provider.search("中文检索")["hits"])
+
+    def test_partial_refresh_resumes_without_reprocessing_completed_paths(self):
+        self.provider.index()
+        self.write("src/model.py", "changedneedle\n")
+        original_source = self.provider.source
+        original_time = knowledge.time.monotonic
+        elapsed = [0]
+
+        def expire_second(path, deadline=None):
+            if path == "src/model.py":
+                elapsed[0] = knowledge.MAX_INDEX_SECONDS + 1
+            return original_source(path, deadline)
+
+        with patch.object(knowledge.time, "monotonic", side_effect=lambda: original_time() + elapsed[0]):
+            with patch.object(self.provider, "source", side_effect=expire_second):
+                coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["stop_reason"], coverage["reused_files"], coverage["remaining_files"]), ("time_limit", 1, 1))
+        self.assertEqual(self.provider.search("parseHTTPRequest")["hits"], [])
+        self.assertGreater(self.provider.search("parseHTTPRequest")["stale_candidates_omitted"], 0)
+        self.provider = knowledge.Knowledge(self.root, self.cache)
+        self.provider.initialize()  # A restarted provider resumes persisted work.
+        with patch.object(self.provider, "source", wraps=self.provider.source) as source:
+            coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual([item.args[0] for item in source.call_args_list], ["src/model.py"])
+        self.assertEqual((coverage["updated_files"], coverage["remaining_files"]), (1, 0))
+        self.assertTrue(self.provider.search("changedneedle")["hits"])
+
+    def test_sqlite_interrupt_rolls_back_whole_changed_source_and_resumes(self):
+        self.provider.index()
+        old_sources = dict((row[0], row[1]) for row in self.rows("sources"))
+        self.write("src/model.py", "changedneedle\n" * 100)
+        original_time = knowledge.time.monotonic
+        original_terms = knowledge.terms
+        original_connect = knowledge.sqlite3.connect
+        elapsed = [0]
+
+        class AggressiveProgress(sqlite3.Connection):
+            def set_progress_handler(self, callback, instructions):
+                return super().set_progress_handler(callback, 1 if callback is not None else 0)
+
+        def expire_while_inserting(text):
+            if "changedneedle" in text:
+                elapsed[0] = knowledge.MAX_INDEX_SECONDS + 1
+            return original_terms(text)
+
+        def connect(*args, **kwargs):
+            return original_connect(*args, factory=AggressiveProgress, **kwargs)
+
+        with patch.object(knowledge.time, "monotonic", side_effect=lambda: original_time() + elapsed[0]):
+            with patch.object(knowledge.sqlite3, "connect", side_effect=connect):
+                with patch.object(knowledge, "terms", side_effect=expire_while_inserting):
+                    coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["stop_reason"], coverage["reused_files"], coverage["updated_files"], coverage["remaining_files"]),
+                         ("time_limit", 1, 0, 1))
+        self.assertEqual(dict((row[0], row[1]) for row in self.rows("sources")), old_sources)
+        self.assertEqual(self.provider.search("parseHTTPRequest")["hits"], [])
+        self.assertTrue(self.provider.search("中文检索")["hits"])
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["updated_files"], coverage["remaining_files"]), (1, 0))
+        self.assertTrue(self.provider.search("changedneedle")["hits"])
+
+    def test_repeated_slow_first_source_does_not_starve_later_paths(self):
+        self.provider.index()
+        self.write("a.md", "slowneedle\n")
+        self.write("z.md", "laterneedle\n")
+        self.git("add", "a.md", "z.md")
+        original_source = self.provider.source
+        original_time = knowledge.time.monotonic
+        elapsed = [0]
+
+        def slow(path, deadline=None):
+            if path == "a.md":
+                elapsed[0] = knowledge.MAX_INDEX_SECONDS + 1
+            return original_source(path, deadline)
+
+        results = []
+        for _ in range(3):
+            elapsed[0] = 0
+            with patch.object(knowledge.time, "monotonic", side_effect=lambda: original_time() + elapsed[0]):
+                with patch.object(self.provider, "source", side_effect=slow):
+                    results.append(self.provider.index(mode="refresh")["coverage"])
+        self.assertEqual(results[0]["remaining_files"], 3)
+        self.assertEqual(results[-1]["remaining_files"], 1)
+        self.assertTrue(self.provider.search("laterneedle")["hits"])
+        self.assertEqual(self.provider.search("slowneedle")["hits"], [])
+
+    def test_resumed_refresh_observes_new_tracking_and_source_eligibility(self):
+        self.provider.index()
+        with patch.object(knowledge, "MAX_INDEX_SECONDS", 0):
+            # Git preparation fails rather than publishing an invented checkpoint.
+            before = self.provider.database.read_bytes()
+            with self.assertRaises(knowledge.KnowledgeError):
+                self.provider.index(mode="refresh")
+        self.assertEqual(self.provider.database.read_bytes(), before)
+        # Persist pending state, then remove a formerly eligible tracked source.
+        with sqlite3.connect(self.provider.database) as connection:
+            connection.execute("UPDATE candidates SET pending=1")
+        self.git("rm", "--cached", "src/model.py")
+        self.write("docs/guide.md", "password='abcdefghijklmnop'\n")
+        self.write("new.md", "newtrackedneedle\n")
+        self.git("add", "new.md")
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["deleted_files"], coverage["updated_files"], coverage["remaining_files"]), (2, 1, 0))
+        self.assertEqual([row[0] for row in self.rows("sources")], ["new.md"])
+        self.assertTrue(self.provider.search("newtrackedneedle")["hits"])
+
+    def test_refresh_capacity_remains_bounded_across_calls(self):
+        with patch.object(knowledge, "MAX_FILES", 1):
+            self.provider.index()
+            for _ in range(2):
+                coverage = self.provider.index(mode="refresh")["coverage"]
+                self.assertEqual((coverage["indexed_files"], coverage["stop_reason"], coverage["remaining_files"]), (1, "file_limit", 1))
+        self.provider.index()
+        source_size = len((self.root / "docs/guide.md").read_bytes())
+        with patch.object(knowledge, "MAX_CORPUS_BYTES", source_size):
+            # An already oversized/corrupt bookkeeping view fails closed.
+            with self.assertRaisesRegex(knowledge.KnowledgeError, "rebuild"):
+                self.provider.index(mode="refresh")
+            self.provider.index()
+            coverage = self.provider.index(mode="refresh")["coverage"]
+            self.assertLessEqual(coverage["indexed_bytes"], source_size)
+            self.assertEqual((coverage["stop_reason"], coverage["remaining_files"]), ("corpus_limit", 1))
+
+    def test_version_one_cache_remains_readable_and_first_refresh_rebuilds(self):
+        coverage = self.provider.index()["coverage"]
+        for key in ("mode", "reused_files", "updated_files", "deleted_files", "remaining_files"):
+            coverage.pop(key)
+        coverage["format_version"] = 1
+        with sqlite3.connect(self.provider.database) as connection:
+            connection.execute("UPDATE metadata SET value=?", (json.dumps(coverage),))
+            connection.execute("ALTER TABLE sources DROP COLUMN byte_count")
+            connection.execute("ALTER TABLE sources DROP COLUMN oversized_lines")
+            connection.execute("DROP TABLE candidates")
+            connection.execute("DROP TABLE continuation")
+        self.assertEqual(self.provider.status()["coverage"]["format_version"], 1)
+        self.assertTrue(self.provider.search("parseHTTPRequest")["hits"])
+        coverage = self.provider.index(mode="refresh")["coverage"]
+        self.assertEqual((coverage["format_version"], coverage["mode"], coverage["updated_files"], coverage["reused_files"]), (2, "refresh", 2, 0))
+
+    def test_corrupt_refresh_bookkeeping_requires_rebuild_without_replacing_cache(self):
+        self.provider.index()
+        with sqlite3.connect(self.provider.database) as connection:
+            connection.execute("UPDATE sources SET byte_count=-1")
+        before = self.provider.database.read_bytes()
+        with self.assertRaisesRegex(knowledge.KnowledgeError, "bookkeeping"):
+            self.provider.index(mode="refresh")
+        self.assertEqual(self.provider.database.read_bytes(), before)
+        self.assertFalse(list(self.provider.cache.glob("build-*")))
+        self.provider.index()
+        self.provider.database.write_bytes(b"invalid SQLite cache")
+        before = self.provider.database.read_bytes()
+        with self.assertRaisesRegex(knowledge.KnowledgeError, "rebuild"):
+            self.provider.index(mode="refresh")
+        self.assertEqual(self.provider.database.read_bytes(), before)
+        self.assertTrue(self.provider.index()["indexed"])
+
+    def test_refresh_rejects_dangling_fts_chunks_and_invalid_ranges(self):
+        mutations = ["DELETE FROM search WHERE rowid=(SELECT min(id) FROM chunks)",
+                     "INSERT INTO search(rowid, tokens) VALUES (99999, 'fabricated')",
+                     "UPDATE chunks SET start_line=0 WHERE path='src/model.py'",
+                     "UPDATE chunks SET path='missing.md' WHERE path='src/model.py'"]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                self.provider.index()
+                with sqlite3.connect(self.provider.database) as connection:
+                    connection.execute(mutation)
+                before = self.provider.database.read_bytes()
+                with self.assertRaisesRegex(knowledge.KnowledgeError, "bookkeeping.*rebuild"):
+                    self.provider.index(mode="refresh")
+                self.assertEqual(self.provider.database.read_bytes(), before)
+                self.assertFalse(list(self.provider.cache.glob("build-*")))
+
+    def test_unchanged_source_with_forged_byte_count_cannot_expand_capacity(self):
+        self.provider.index()
+        with sqlite3.connect(self.provider.database) as connection:
+            connection.execute("UPDATE sources SET byte_count=1 WHERE path='src/model.py'")
+        before = self.provider.database.read_bytes()
+        with self.assertRaisesRegex(knowledge.KnowledgeError, "bookkeeping"):
+            self.provider.index(mode="refresh")
+        self.assertEqual(self.provider.database.read_bytes(), before)
+
+    def test_refresh_rejects_corrupt_private_continuation_state(self):
+        for mutation in ["UPDATE candidates SET pending=99", "DELETE FROM continuation",
+                         "UPDATE continuation SET cursor='../outside.md'"]:
+            with self.subTest(mutation=mutation):
+                self.provider.index()
+                with sqlite3.connect(self.provider.database) as connection:
+                    connection.execute(mutation)
+                before = self.provider.database.read_bytes()
+                with self.assertRaisesRegex(knowledge.KnowledgeError, "continuation.*rebuild"):
+                    self.provider.index(mode="refresh")
+                self.assertEqual(self.provider.database.read_bytes(), before)
+
+    def test_root_replacement_during_refresh_preserves_old_cache(self):
+        self.provider.index()
+        before = self.provider.database.read_bytes()
+        original_source = self.provider.source
+
+        def replace_root(path, deadline=None):
+            result = original_source(path, deadline)
+            self.root.rename(self.base / "old-root")
+            self.root.mkdir()
+            return result
+
+        with patch.object(self.provider, "source", side_effect=replace_root):
+            with self.assertRaisesRegex(knowledge.KnowledgeError, "root changed|root identity"):
+                self.provider.index(mode="refresh")
+        self.assertEqual(self.provider.database.read_bytes(), before)
+        self.assertFalse(list(self.provider.cache.glob("build-*")))
+
+
 class NativeProtocolTests(Fixture):
     def environment(self):
         environment = dict(os.environ)
@@ -521,6 +812,23 @@ class NativeProtocolTests(Fixture):
         responses = self.run_wire(frame(messages[0]) + frame(call("read", path=hit["path"], source_hash=hit["source_hash"], start_line=1, end_line=1)))
         self.assertEqual(responses[1]["result"]["structuredContent"]["text"], "def parseHTTPRequest(value):\n")
         self.assertEqual(self.git("status", "--porcelain"), b"")
+
+    def test_refresh_mode_schema_validation_and_protocol_results(self):
+        requests = [rpc("initialize", protocolVersion="webcodex-plugin-v1"), rpc("tools/list"),
+                    call("index", mode="refresh"), call("index", mode="refresh"),
+                    call("index", mode="invalid"), call("index", mode=True),
+                    call("index", mode="refresh", root="PRIVATE_INPUT"), call("status")]
+        responses = self.run_wire(b"".join(frame(request) for request in requests))
+        tool = next(tool for tool in responses[1]["result"]["tools"] if tool["name"] == "index")
+        self.assertEqual(tool["inputSchema"]["properties"]["mode"]["enum"], ["rebuild", "refresh"])
+        self.assertEqual(tool["inputSchema"]["required"], [])
+        first = responses[2]["result"]["structuredContent"]["coverage"]
+        second = responses[3]["result"]["structuredContent"]["coverage"]
+        self.assertEqual((first["mode"], first["updated_files"], second["reused_files"]), ("refresh", 2, 2))
+        for response in responses[4:7]:
+            self.assertEqual(response["error"]["code"], -32602)
+        self.assertEqual(responses[-1]["result"]["structuredContent"]["coverage"], second)
+        self.assertNotIn("PRIVATE_INPUT", json.dumps(responses))
 
     def test_wire_failures_recover_without_reflecting_private_inputs(self):
         messages = [rpc("initialize", protocolVersion="webcodex-plugin-v1"), call("index", root="PRIVATE_INPUT"), call("search", query="x", limit=True), call("read", path="../outside.md", source_hash="0" * 64), call("index"), call("search", query="request", limit=21), call("status")]

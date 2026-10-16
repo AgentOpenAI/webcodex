@@ -26,8 +26,8 @@ python3 -B -m unittest discover -s plugins/project-knowledge -v
 ```
 
 测试包含真实子进程的初始化、工具发现、索引/检索/读取和 EOF 前交互式刷新，还覆盖
-FTS5 缺失、过期/删除来源、目录与根替换、敏感/二进制内容、结果边界和失败重建后旧索引
-保留。它们不宣称验证了在线 Runner 准入或 `plugin_tool` 权限与 binding。
+FTS5 缺失、过期/删除来源、目录与根替换、敏感/二进制内容、结果边界、增量复用、
+可续建刷新，以及重建或刷新失败后旧索引保留。它们不宣称验证了在线 Runner 准入或 `plugin_tool` 权限与 binding。
 回归还覆盖达到文件上限的长标点来源、损坏的缓存 metadata 和非法缓存行号。
 metadata 或行号非法时返回已知重建错误，不会终止 provider，也不会声称错误的来源范围。
 
@@ -39,7 +39,7 @@ python3 -B scripts/e2e_project_knowledge_ws.py --bin-dir /absolute/path/to/targe
 ```
 
 脚本复用一次性服务 fixture，创建临时用户/凭据、Project、Runner 配置与缓存，验证真实准入、
-Project binding、index/search/read、缺少 invoke scope、跨 Project/根参数拒绝、过期来源排除
+Project binding、index/refresh/search/read、缺少 invoke scope、跨 Project/根参数拒绝、过期来源排除
 以及移除 provider。它不启动模型服务、不接触共享服务或配置，结束后清理所有临时资源。
 
 ## 配置指定 Runner
@@ -102,7 +102,7 @@ Project binding 是路由与授权边界，不是任意原生可执行程序的�
 
 | 工具 | 参数 | 行为 |
 | --- | --- | --- |
-| `index` | `{}` | 显式重建派生缓存；只有该工具写缓存数据。 |
+| `index` | `{}` 或 `{"mode":"rebuild"}`；`{"mode":"refresh"}` | 默认从头重建；refresh 核验当前跟踪字节，复用不变片段/FTS 行，更新新增/修改来源并删除已删除/排除来源。只有该工具写缓存数据。 |
 | `status` | `{}` | 读取已保存的覆盖信息，或返回 `indexed=false`；不扫描/重建。 |
 | `search` | `{"query":"parseHTTPRequest 项目知识","limit":5}` | 对已有索引排序，并核验当前跟踪状态和来源哈希后返回片段。 |
 | `read` | `{"path":"src/model.py","source_hash":"<search 返回的哈希>","start_line":1,"end_line":12}` | 重新核验资格和预期哈希，返回当前来源行或已知错误。 |
@@ -111,26 +111,33 @@ Project binding 是路由与授权边界，不是任意原生可执行程序的�
 和 `observed_revision`。行号从 1 开始且包含两端，哈希是完整当前文件字节的 SHA-256。
 revision 是本地 HEAD 观察（首次提交前为 `null`），**不能证明文件等同于已提交版本**；已跟踪的工作树修改也能
 被索引。返回片段来自重新读取的当前字节，不来自缓存文本。核验只代表调用时观察，
-不保证后续不变；因此 read 必须提供预期哈希。哈希变化后应重新 index 和 search。
+不保证后续不变；因此 read 必须提供预期哈希。哈希变化后应刷新或重建，再 search。
 
 已改变、已删除、不再跟踪或新被排除的候选会被省略；`stale_candidates_omitted` 统计
-已检查候选中的省略数。每次最多检查 80 个排序候选，过期候选可能遮蔽后续命中。
+已检查候选中的省略数。每次最多检查 16,384 个排序候选；候选或时间上限可能遮蔽后续命中。
 `results_truncated` 标记候选、结果数、时间或字节限制。零命中不证明内容不存在。
 检索不会自动重建缓存。
 
 coverage 仅描述**一次索引运行**，不宣称整个语料当前最新：`revision`、
 `indexed_at_unix`、`eligible_files`、`indexed_files`、`indexed_bytes`、`chunks`、
 `excluded_entries`、`skipped_files`、`oversized_lines_omitted`、`unprocessed_files`
-和 `stop_reason`。excluded 包括不支持的格式、敏感路径、符号链接、子模块、非法路径
+和 `stop_reason`。格式 2 还记录 `mode`、`reused_files`、`updated_files`、
+`deleted_files` 和 `remaining_files`。复用/更新/删除数只描述此次已提交的工作；
+替换修改来源计为 updated，移除不可用/排除来源计为 deleted。`indexed_files` 包含
+等待核验的保留提示；`remaining_files` 是本轮核验仍待处理的候选数，包括保留提示和
+受容量限制的来源；`unprocessed_files` 只统计没有索引行的待处理候选。即使
+`remaining_files=0`，这些字段也不能证明当前全部来源最新。
+excluded 包括不支持的格式、敏感路径、符号链接、子模块、非法路径
 以及冲突索引项；skipped 包括不可读、硬链接、二进制、敏感内容或超大文件。
 被 Git 跟踪不等于内容安全或索引完整。
 
 ## 边界与隐私
 
-- 每轮最多 **4,096 个索引文件**、**每文件 256 KiB**、**64 MiB 来源字节**，索引工作
+- 已存索引最多 **4,096 个文件**、**每文件 256 KiB**、**64 MiB 来源字节**，索引工作
   预算为 **20 秒**。在有界读取、片段和 SQLite 步骤之间检查时间；最终提交、fsync 和
   原子替换可能增加本地文件系统耗时。Git 子进程使用剩余时间，最多捕获 **8 MiB**
-  输出；超限失败不会替换旧索引。
+  输出。私有候选/待处理清单受该跟踪文件观察上限约束，已存来源语料仍受更严格的
+  4,096 文件/64 MiB 上限约束；Git 输出超限失败不会替换旧索引。
 - search 默认 **5 项**，允许 **1–20 项**，本地工作预算 **5 秒**。序列化工具结果不超过
   **16 KiB**。read 默认 48 行，最多 200 行，并按完整行缩减到相同字节边界。
   超过 4 KiB 的单行不参与索引并计入 coverage；单行超过 read 结果边界时显式失败。
@@ -138,14 +145,23 @@ coverage 仅描述**一次索引运行**，不宣称整个语料当前最新：`
   路径穿越、控制字符、敏感路径名、来源任一组件中的符号链接、硬链接、二进制内容及
   可识别的密钥/令牌/密码模式均被排除。这些保守启发式可能排除正常文本，且**无法识别
   所有秘密**。为调用者启用源码检索前应检查仓库跟踪内容。
-- 重建在私有、可丢弃的 SQLite 文件中进行，并通过原子替换发布。**达到 20 秒工作预算时
-  会发布只包含已完整处理且已提交来源的部分索引**（`stop_reason=time_limit`），而非
-  随机丢弃首次构建成果。首次完成文件、之后至多每 512 个完成文件，以及临近截止时均
-  设有检查点。SQLite 进度中断可能回滚当前尚未提交的整批文件；这些文件计入
-  `unprocessed_files`，不会被错误标记为可检索。Git、SQLite、缓存及其他**非预算失败**
-  会丢弃临时构建并保留上次已发布索引。应检查 coverage：`indexed=true` **不代表**
-  完整或最新覆盖。重建是重新进行有界扫描，而不是从旧断点增量续建。不会自动写入
-  Project、Git、Memory 或指导文件，也不会调用外部模型、监听或修改配置。
+- 重建与刷新均在私有、可丢弃的 SQLite 文件中进行，经 fsync 后原子替换发布。
+  refresh 复制已发布数据库，核验当前文件完整字节哈希后才复用不变片段/FTS 行及其 ID；
+  不使用 stat 时间戳或 HEAD 代替文件新鲜度。每次刷新都重新核验根身份和 Git 当前跟踪集，
+  在处理候选前删除已取消跟踪或路径不再合格的行。访问到敏感、二进制、超大或不可用
+  来源时删除旧行；尚未访问的保留行只作为提示，search/read 仍重新核验当前资格与哈希。
+- **达到 20 秒预算会发布有界的部分进度**；仅保留已完整处理且已提交批次中的文件。
+  SQLite 中断可能回滚当前未提交批次。私有待处理集和轮转游标让后续显式
+  `index({"mode":"refresh"})` 继续未完成核验，provider 重启后也可继续；反复缓慢的未完成
+  来源不会一直阻塞后续路径。一轮完成后，下次刷新开始新一轮核验；rebuild 总是从头开始。
+  **反复刷新不能突破 4,096 文件/64 MiB 语料上限**；来源或范围不变时，`file_limit` /
+  `corpus_limit` 和待处理工作可能持续存在，不承诺反复调用最终能索引所有合格来源。
+- 无缓存时 refresh 构建索引。格式 1 缓存仍可用于 status/search；首次 refresh 根据当前来源
+  构建格式 2，不信任缺失的增量记录。metadata、来源/续建记录或 chunk/FTS 完整性检查
+  发现损坏缓存时返回已知重建错误。Git、SQLite、缓存、根身份
+  及其他非预算失败丢弃临时构建并保留已发布索引；缓存准备超时同样保留旧索引。
+  `indexed=true` **不代表**完整或最新覆盖。不会自动写入 Project、Git、Memory、指导文件，
+  也不会调用外部模型、监听或修改配置。
 
 Runner 仍负责 schema 准入、权限、精确 provider binding、进程生命周期、超时、结果
 验证和传输结果不确定性。不确定的 index 调用之后先观察 status，再决定是否重建；

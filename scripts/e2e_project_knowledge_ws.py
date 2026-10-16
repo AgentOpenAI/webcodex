@@ -113,6 +113,11 @@ class KnowledgeSmoke(InteractiveSmoke):
         check(not self.invoke(bindings["status"], {})["indexed"], "denied calls mutated cache")
         indexed = self.invoke(bindings["index"], {})
         check(indexed["coverage"]["indexed_files"] == 2, "tracked source coverage mismatch")
+        refreshed = self.invoke(bindings["index"], {"mode": "refresh"})["coverage"]
+        check(refreshed["mode"] == "refresh" and refreshed["reused_files"] == 2
+              and refreshed["remaining_files"] == 0, "incremental unchanged refresh coverage mismatch")
+        rejected = self.invoke(bindings["index"], {"mode": "unsupported"}, success=False)
+        check(rejected.get("dispatchState") == "not_started", "invalid refresh mode reached provider")
         for query, expected in [("parseHTTPRequest", "model.py"), ("中文检索", "guide.md")]:
             hits = self.invoke(bindings["search"], {"query": query})["hits"]
             check(bool(hits) and hits[0]["path"] == expected, "native search source mismatch")
@@ -125,7 +130,16 @@ class KnowledgeSmoke(InteractiveSmoke):
         check("outsideprojectneedle" not in json.dumps(self.last_result), "path guard leaked source")
         (repo / "model.py").write_text("def changed():\n    pass\n")
         check(not self.invoke(bindings["search"], {"query": "parseHTTPRequest"})["hits"], "stale source returned as current")
-        print("PASS: real MCP/WS native admission, exact Project binding, scoped index/search/read, source guards and stale exclusion")
+        refreshed = self.invoke(bindings["index"], {"mode": "refresh"})["coverage"]
+        check(refreshed["updated_files"] == 1 and refreshed["reused_files"] == 1,
+              "changed-source refresh coverage mismatch")
+        hits = self.invoke(bindings["search"], {"query": "changed"})["hits"]
+        check(bool(hits) and hits[0]["path"] == "model.py", "refreshed source not searchable")
+        (repo / "model.py").unlink()
+        refreshed = self.invoke(bindings["index"], {"mode": "refresh"})["coverage"]
+        check(refreshed["deleted_files"] == 1 and refreshed["indexed_files"] == 1,
+              "deleted-source refresh retained stale rows")
+        print("PASS: real MCP/WS native admission, exact Project binding, scoped index/refresh/search/read, source guards and stale exclusion")
         config_path.write_text("\n".join(config + ['[plugins]', 'providers = []']) + "\n")
         reloaded = self.plugin({"action": "reload", "runner": RUNNER})
         check(not reloaded.get("failures"), "provider removal failed")

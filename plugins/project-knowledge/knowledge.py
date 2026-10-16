@@ -26,7 +26,7 @@ MAX_PATH_CHARS = 1024
 MAX_RESULTS = 20
 CHUNK_LINES = 48
 CHUNK_BYTES = 4096
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 EXTENSIONS = frozenset(".md .markdown .txt .rst .adoc .rs .py .js .jsx .ts .tsx .mjs .cjs .c .h .cpp .hpp .cc .cs .go .java .kt .kts .swift .rb .php .sh .bash .zsh .fish .ps1 .sql .html .css .scss .vue .svelte .lua .r .jl .ex .exs .erl .hrl .hs .scala .dart .toml .yaml .yml .json .xml .proto .graphql".split())
 NAMES = frozenset({"Dockerfile", "Makefile", "CMakeLists.txt", "LICENSE"})
 SENSITIVE_PART = re.compile(r"(?:^|[._-])(?:secrets?|credentials?|tokens?|passwords?|private[-_]?keys?)(?:$|[._-])", re.I)
@@ -49,9 +49,20 @@ def valid_metadata(value):
     counts = {"indexed_at_unix", "eligible_files", "indexed_files", "indexed_bytes",
               "chunks", "excluded_entries", "skipped_files", "oversized_lines_omitted",
               "unprocessed_files"}
-    if not isinstance(value, dict) or set(value) != counts | {"format_version", "revision", "stop_reason"}:
+    if not isinstance(value, dict):
         return False
-    if type(value["format_version"]) is not int or value["format_version"] != FORMAT_VERSION:
+    version = value.get("format_version")
+    extra = {"mode", "reused_files", "updated_files", "deleted_files", "remaining_files"} if version == 2 else set()
+    if set(value) != counts | {"format_version", "revision", "stop_reason"} | extra:
+        return False
+    if type(version) is not int or version not in (1, FORMAT_VERSION):
+        return False
+    if extra and (value["mode"] not in ("rebuild", "refresh")
+                  or any(type(value[key]) is not int or value[key] < 0 for key in extra - {"mode"})
+                  or value["reused_files"] + value["updated_files"] > MAX_FILES
+                  or value["deleted_files"] > MAX_FILES
+                  or type(value["eligible_files"]) is not int
+                  or value["remaining_files"] > value["eligible_files"]):
         return False
     if any(type(value[key]) is not int or value[key] < 0 for key in counts):
         return False
@@ -346,7 +357,21 @@ class Knowledge:
         connection.close()
         return {"indexed": True, "coverage": metadata}
 
-    def index(self):
+    def index(self, mode="rebuild"):
+        if mode not in ("rebuild", "refresh"):
+            raise KnowledgeError("Index mode must be rebuild or refresh.")
+        self.require_initialized()
+        if mode == "refresh" and self.database.exists():
+            previous, coverage = self.connect()
+            if coverage["format_version"] == FORMAT_VERSION:
+                try:
+                    return self.refresh(previous)
+                finally:
+                    previous.close()
+            previous.close()  # Version 1 remains readable; refresh migrates by rebuilding.
+        return self.rebuild(mode)
+
+    def rebuild(self, mode):
         self.require_initialized()
         started = time.monotonic()
         deadline = started + MAX_INDEX_SECONDS
@@ -365,11 +390,17 @@ class Knowledge:
             progress = lambda: int(time.monotonic() >= deadline)
             connection.set_progress_handler(progress, 10000)
             connection.execute("CREATE TABLE metadata(value TEXT NOT NULL)")
-            connection.execute("CREATE TABLE sources(path TEXT PRIMARY KEY, source_hash TEXT NOT NULL)")
+            connection.execute("CREATE TABLE sources(path TEXT PRIMARY KEY, source_hash TEXT NOT NULL, byte_count INTEGER NOT NULL, oversized_lines INTEGER NOT NULL)")
+            connection.execute("CREATE TABLE candidates(path TEXT PRIMARY KEY, pending INTEGER NOT NULL)")
+            connection.execute("CREATE TABLE continuation(cursor TEXT NOT NULL)")
+            connection.execute("INSERT INTO continuation VALUES ('')")
+            connection.executemany("INSERT INTO candidates VALUES (?, 1)", ((path,) for path in paths))
+            connection.commit()
             connection.execute("CREATE TABLE chunks(id INTEGER PRIMARY KEY, path TEXT NOT NULL, start_line INTEGER NOT NULL, end_line INTEGER NOT NULL, text TEXT NOT NULL)")
+            connection.execute("CREATE INDEX chunks_path ON chunks(path)")
             connection.execute("CREATE VIRTUAL TABLE search USING fts5(tokens)")
             count = size = skipped = chunks = oversized_lines = 0
-            checkpoint = (count, size, chunks, oversized_lines)
+            checkpoint = (count, size, chunks, oversized_lines, skipped)
             final_checkpointed = False
             connection.execute("BEGIN")
             stop_reason = "complete"
@@ -388,6 +419,8 @@ class Knowledge:
                         stop_reason = "time_limit"
                         break  # An unfinished read is unprocessed, not skipped.
                     skipped += 1
+                    connection.execute("UPDATE candidates SET pending=0 WHERE path=?", (path,))
+                    connection.execute("UPDATE continuation SET cursor=?", (path,))
                     continue
                 if size + len(data) > MAX_CORPUS_BYTES:
                     stop_reason = "corpus_limit"
@@ -398,7 +431,9 @@ class Knowledge:
                     # Batch inserts avoid per-source FTS5 SAVEPOINT flushes.
                     # Only full-file checkpoint commits are publishable if the
                     # current batch must be rolled back at its time limit.
-                    connection.execute("INSERT INTO sources VALUES (?, ?)", (path, digest(data)))
+                    connection.execute("INSERT INTO sources VALUES (?, ?, ?, ?)", (path, digest(data), len(data), file_oversized))
+                    connection.execute("UPDATE candidates SET pending=0 WHERE path=?", (path,))
+                    connection.execute("UPDATE continuation SET cursor=?", (path,))
                     for first, last, chunk in chunk_text(text):
                         if time.monotonic() >= deadline:
                             raise IndexBudgetExpired()
@@ -417,7 +452,7 @@ class Knowledge:
                     # transaction. Never report its uncommitted full files.
                     connection.rollback()
                     if isinstance(error, IndexBudgetExpired) or (str(error) == "interrupted" and time.monotonic() >= deadline):
-                        count, size, chunks, oversized_lines = checkpoint
+                        count, size, chunks, oversized_lines, skipped = checkpoint
                         stop_reason = "time_limit"
                         break
                     raise  # Genuine DB errors retain the old published index.
@@ -431,7 +466,7 @@ class Knowledge:
                 if count == 1 or count - checkpoint[0] >= INDEX_CHECKPOINT_FILES or (near_deadline and not final_checkpointed):
                     connection.set_progress_handler(None, 0)
                     connection.commit()
-                    checkpoint = (count, size, chunks, oversized_lines)
+                    checkpoint = (count, size, chunks, oversized_lines, skipped)
                     final_checkpointed = final_checkpointed or near_deadline
                     connection.execute("BEGIN")
                     connection.set_progress_handler(progress, 10000)
@@ -443,7 +478,9 @@ class Knowledge:
                 "excluded_entries": excluded, "skipped_files": skipped,
                 "oversized_lines_omitted": oversized_lines,
                 "unprocessed_files": len(paths) - count - skipped,
-                "stop_reason": stop_reason,
+                "stop_reason": stop_reason, "mode": mode,
+                "reused_files": 0, "updated_files": count, "deleted_files": 0,
+                "remaining_files": len(paths) - count - skipped,
             }
             connection.execute("INSERT INTO metadata VALUES (?)", (json.dumps(metadata),))
             connection.commit()
@@ -451,6 +488,7 @@ class Knowledge:
             connection = None
             with open(temporary, "rb") as output:
                 os.fsync(output.fileno())
+            self.require_initialized()
             os.replace(temporary, self.database)
             return {"indexed": True, "coverage": metadata}
         except (sqlite3.Error, OSError):
@@ -463,6 +501,196 @@ class Knowledge:
                     os.unlink(temporary + suffix)
                 except FileNotFoundError:
                     pass
+
+    def refresh(self, previous):
+        """Copy-on-write update; private candidate state resumes bounded validation.
+
+        Pending paths are hints about work, never evidence of current eligibility.
+        Every invocation obtains a new tracked set; every reused source is read and
+        hashed again. Unvisited cached rows remain hints protected by search/read.
+        """
+        deadline = time.monotonic() + MAX_INDEX_SECONDS
+        paths, excluded = self.tracked(deadline)
+        revision = self.revision(deadline)
+        descriptor, temporary = tempfile.mkstemp(prefix="build-", suffix=".sqlite3", dir=self.cache)
+        os.close(descriptor)
+        connection = None
+        try:
+            connection = sqlite3.connect(temporary)
+            connection.row_factory = sqlite3.Row
+
+            def copy_progress(_status, _remaining, _total):
+                if time.monotonic() >= deadline:
+                    raise KnowledgeError("Refresh cache preparation exceeded its budget; the previous index is retained.")
+
+            previous.backup(connection, pages=128, progress=copy_progress)
+            connection.execute("PRAGMA journal_mode=MEMORY")
+            connection.execute("PRAGMA synchronous=OFF")
+            progress = lambda: int(time.monotonic() >= deadline)
+            connection.set_progress_handler(progress, 10000)
+            if connection.execute("PRAGMA quick_check").fetchone()[0] != "ok":
+                raise KnowledgeError("Derived index is unavailable; rebuild the index.")
+            connection.execute("INSERT INTO search(search) VALUES ('integrity-check')")
+            # Reuse only structurally valid one-to-one chunk/FTS pairs. Cached text
+            # still has no authority: search/read project current verified bytes.
+            if (connection.execute("SELECT 1 FROM chunks c LEFT JOIN sources s ON s.path=c.path LEFT JOIN search f ON f.rowid=c.id WHERE s.path IS NULL OR f.rowid IS NULL OR typeof(c.start_line)!='integer' OR typeof(c.end_line)!='integer' OR c.start_line<1 OR c.end_line<c.start_line OR c.end_line-c.start_line+1>? LIMIT 1", (CHUNK_LINES,)).fetchone()
+                    or connection.execute("SELECT 1 FROM search f LEFT JOIN chunks c ON c.id=f.rowid WHERE c.id IS NULL LIMIT 1").fetchone()):
+                raise KnowledgeError("Derived chunk/search bookkeeping is invalid; rebuild the index.")
+            # Read only bounded bookkeeping. Reject corruption rather than trusting
+            # cached counts to expand either corpus or continuation limits.
+            sources = connection.execute("SELECT path, source_hash, byte_count, oversized_lines FROM sources LIMIT ?", (MAX_FILES + 1,)).fetchall()
+            if (len(sources) > MAX_FILES or any(
+                    not eligible_path(row["path"])
+                    or not isinstance(row["source_hash"], str)
+                    or re.fullmatch(r"[0-9a-f]{64}", row["source_hash"]) is None
+                    or type(row["byte_count"]) is not int or not 0 <= row["byte_count"] <= MAX_FILE_BYTES
+                    or type(row["oversized_lines"]) is not int or not 0 <= row["oversized_lines"] <= row["byte_count"]
+                    for row in sources)
+                    or sum(row["byte_count"] for row in sources) > MAX_CORPUS_BYTES):
+                raise KnowledgeError("Derived source bookkeeping is invalid; rebuild the index.")
+            if connection.execute("SELECT 1 FROM candidates WHERE pending NOT IN (0, 1) LIMIT 1").fetchone():
+                raise KnowledgeError("Derived continuation bookkeeping is invalid; rebuild the index.")
+            connection.execute("CREATE TEMP TABLE current_paths(path TEXT PRIMARY KEY)")
+            connection.executemany("INSERT INTO current_paths VALUES (?)", ((path,) for path in paths))
+            removed = [row[0] for row in connection.execute("SELECT path FROM sources WHERE path NOT IN (SELECT path FROM current_paths)")]
+            for path in removed:
+                self.remove_source(connection, path)
+            connection.execute("DELETE FROM candidates WHERE path NOT IN (SELECT path FROM current_paths)")
+            # A completed cycle starts another current-byte verification cycle.
+            if not connection.execute("SELECT 1 FROM candidates WHERE pending=1 LIMIT 1").fetchone():
+                connection.execute("UPDATE candidates SET pending=1")
+            connection.execute("INSERT OR IGNORE INTO candidates SELECT path, 1 FROM current_paths")
+            cursors = connection.execute("SELECT cursor FROM continuation LIMIT 2").fetchall()
+            if len(cursors) != 1 or not isinstance(cursors[0][0], str) or (cursors[0][0] and not eligible_path(cursors[0][0])):
+                raise KnowledgeError("Derived continuation cursor is invalid; rebuild the index.")
+            cursor = cursors[0][0]
+            pending = [row[0] for row in connection.execute("SELECT path FROM candidates WHERE pending=1 ORDER BY path<=?, path", (cursor,))]
+            connection.execute("DELETE FROM metadata")
+            connection.commit()  # Eligibility pruning survives a later budget rollback.
+            count, size = connection.execute("SELECT count(*), coalesce(sum(byte_count), 0) FROM sources").fetchone()
+            reused = updated = completed = 0
+            deleted = len(removed)
+            checkpoint = (count, size, reused, updated, deleted, completed)
+            stop_reason = "complete"
+            connection.execute("BEGIN")
+            for path in pending:
+                if time.monotonic() >= deadline:
+                    stop_reason = "time_limit"
+                    break
+                try:
+                    old = connection.execute("SELECT source_hash, byte_count FROM sources WHERE path=?", (path,)).fetchone()
+                    try:
+                        data, text = self.source(path, deadline)
+                    except KnowledgeError:
+                        self.require_initialized()
+                        if time.monotonic() >= deadline:
+                            raise IndexBudgetExpired()
+                        if old is not None:
+                            self.remove_source(connection, path)
+                            count -= 1
+                            size -= old["byte_count"]
+                            deleted += 1
+                    else:
+                        source_hash = digest(data)
+                        if old is not None and source_hash == old["source_hash"]:
+                            if old["byte_count"] != len(data):
+                                raise KnowledgeError("Derived source bookkeeping is invalid; rebuild the index.")
+                            reused += 1
+                        else:
+                            next_count = count + (old is None)
+                            next_size = size - (old["byte_count"] if old else 0) + len(data)
+                            if next_count > MAX_FILES or next_size > MAX_CORPUS_BYTES:
+                                # Remove known stale bytes even when their replacement
+                                # cannot fit. Leave this path pending, without promising
+                                # that repeated refresh can exceed corpus capacity.
+                                if old is not None:
+                                    self.remove_source(connection, path)
+                                    count -= 1
+                                    size -= old["byte_count"]
+                                    deleted += 1
+                                if stop_reason == "complete":
+                                    stop_reason = "file_limit" if next_count > MAX_FILES else "corpus_limit"
+                                connection.execute("UPDATE continuation SET cursor=?", (path,))
+                                continue
+                            if old is not None:
+                                self.remove_source(connection, path)
+                            oversized = sum(len(line.encode("utf-8")) > CHUNK_BYTES for line in text.splitlines(keepends=True))
+                            connection.execute("INSERT INTO sources VALUES (?, ?, ?, ?)", (path, source_hash, len(data), oversized))
+                            rowid = connection.execute("SELECT coalesce(max(id), 0) FROM chunks").fetchone()[0]
+                            for first, last, chunk in chunk_text(text):
+                                if time.monotonic() >= deadline:
+                                    raise IndexBudgetExpired()
+                                tokens = " ".join(terms(path + "\n" + chunk))
+                                if tokens:
+                                    rowid += 1
+                                    connection.execute("INSERT INTO chunks VALUES (?, ?, ?, ?, ?)", (rowid, path, first, last, chunk))
+                                    connection.execute("INSERT INTO search(rowid, tokens) VALUES (?, ?)", (rowid, tokens))
+                            updated += 1
+                            count, size = next_count, next_size
+                    if time.monotonic() >= deadline:
+                        raise IndexBudgetExpired()
+                    connection.execute("UPDATE candidates SET pending=0 WHERE path=?", (path,))
+                    connection.execute("UPDATE continuation SET cursor=?", (path,))
+                    completed += 1
+                    # First completed file always survives; later bounded batches
+                    # amortize FTS flushes. Never publish a partially changed source.
+                    if completed == 1 or completed - checkpoint[-1] >= INDEX_CHECKPOINT_FILES or time.monotonic() >= deadline - INDEX_FINAL_CHECKPOINT_MARGIN:
+                        connection.set_progress_handler(None, 0)
+                        connection.commit()
+                        checkpoint = (count, size, reused, updated, deleted, completed)
+                        connection.execute("BEGIN")
+                except (IndexBudgetExpired, sqlite3.Error) as error:
+                    connection.set_progress_handler(None, 0)
+                    connection.rollback()
+                    if isinstance(error, IndexBudgetExpired) or (str(error) == "interrupted" and time.monotonic() >= deadline):
+                        count, size, reused, updated, deleted, completed = checkpoint
+                        # Rotate past an unfinished file too: a repeatedly slow
+                        # source must not starve every later bounded candidate.
+                        connection.execute("UPDATE continuation SET cursor=?", (path,))
+                        stop_reason = "time_limit"
+                        break
+                    raise
+                finally:
+                    connection.set_progress_handler(progress, 10000)
+            connection.set_progress_handler(None, 0)
+            remaining = connection.execute("SELECT count(*) FROM candidates WHERE pending=1").fetchone()[0]
+            unprocessed = connection.execute("SELECT count(*) FROM candidates WHERE pending=1 AND path NOT IN (SELECT path FROM sources)").fetchone()[0]
+            chunks = connection.execute("SELECT count(*) FROM chunks").fetchone()[0]
+            oversized = connection.execute("SELECT coalesce(sum(oversized_lines), 0) FROM sources").fetchone()[0]
+            metadata = {
+                "format_version": FORMAT_VERSION, "revision": revision,
+                "indexed_at_unix": int(time.time()), "eligible_files": len(paths),
+                "indexed_files": count, "indexed_bytes": size, "chunks": chunks,
+                "excluded_entries": excluded, "skipped_files": len(paths) - count - unprocessed,
+                "oversized_lines_omitted": oversized, "unprocessed_files": unprocessed,
+                "stop_reason": stop_reason, "mode": "refresh", "reused_files": reused,
+                "updated_files": updated, "deleted_files": deleted, "remaining_files": remaining,
+            }
+            connection.execute("INSERT INTO metadata VALUES (?)", (json.dumps(metadata),))
+            connection.commit()
+            connection.close()
+            connection = None
+            with open(temporary, "rb") as output:
+                os.fsync(output.fileno())
+            self.require_initialized()
+            os.replace(temporary, self.database)
+            return {"indexed": True, "coverage": metadata}
+        except (sqlite3.Error, OSError):
+            raise KnowledgeError("Index refresh failed; any previous complete index is retained; rebuild corrupt caches.") from None
+        finally:
+            if connection is not None:
+                connection.close()
+            for suffix in ("", "-journal"):
+                try:
+                    os.unlink(temporary + suffix)
+                except FileNotFoundError:
+                    pass
+
+    @staticmethod
+    def remove_source(connection, path):
+        connection.execute("DELETE FROM search WHERE rowid IN (SELECT id FROM chunks WHERE path=?)", (path,))
+        connection.execute("DELETE FROM chunks WHERE path=?", (path,))
+        connection.execute("DELETE FROM sources WHERE path=?", (path,))
 
     def search(self, query, limit=5):
         if not isinstance(query, str) or not 1 <= len(query) <= 512 or type(limit) is not int or not 1 <= limit <= MAX_RESULTS:
@@ -538,10 +766,10 @@ class Knowledge:
             raise KnowledgeError("Read requires a positive ordered line range.")
         deadline = time.monotonic() + 5
         if path not in set(self.tracked(deadline)[0]):
-            raise KnowledgeError("Source is no longer an eligible tracked file; rebuild and search again.")
+            raise KnowledgeError("Source is no longer an eligible tracked file; refresh or rebuild and search again.")
         data, text = self.source(path, deadline)
         if digest(data) != source_hash:
-            raise KnowledgeError("Source hash changed; rebuild and search again before reading.")
+            raise KnowledgeError("Source hash changed; refresh or rebuild and search again before reading.")
         lines = text.splitlines(keepends=True)
         if start_line > len(lines):
             raise KnowledgeError("Requested line range is outside this source.")
