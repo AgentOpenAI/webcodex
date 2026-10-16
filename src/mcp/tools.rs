@@ -447,6 +447,19 @@ pub(super) fn mcp_tools_list_payload_with_features_for_auth(
             tools.push(mention);
         }
     }
+    if auth.is_some_and(AuthContext::is_oauth_token) {
+        for tool in tools.iter_mut() {
+            let Some(name) = tool["name"].as_str().map(str::to_string) else {
+                continue;
+            };
+            if let Some(scope_options) = crate::auth::oauth_mcp_security_scheme_scopes(&name) {
+                tool["securitySchemes"] = json!(scope_options
+                    .into_iter()
+                    .map(|scopes| json!({ "type": "oauth2", "scopes": scopes }))
+                    .collect::<Vec<_>>());
+            }
+        }
+    }
     json!({ "tools": tools })
 }
 
