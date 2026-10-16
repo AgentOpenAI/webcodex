@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import stat
 import shutil
@@ -26,10 +27,12 @@ from typing import Any
 
 try:
     from scripts import agent_loop_report as report
-    from scripts.e2e_generic_agent_ws import GenericFixture, GENERIC_CASES, pressure_script
+    from scripts import agent_temporal_evidence as temporal
+    from scripts.e2e_generic_agent_ws import GenericFixture, GENERIC_CASES, pressure_script, mixed_note_script, encoded_csv_script
 except ModuleNotFoundError:
     import agent_loop_report as report
-    from e2e_generic_agent_ws import GenericFixture, GENERIC_CASES, pressure_script
+    import agent_temporal_evidence as temporal
+    from e2e_generic_agent_ws import GenericFixture, GENERIC_CASES, pressure_script, mixed_note_script, encoded_csv_script
 
 STATUS_VALUES = frozenset(("pass", "fail", "partial", "unsupported"))
 DEFAULT_CASES = ("readonly_review", "guarded_multi_file_edit", "long_validation_handoff")
@@ -197,6 +200,8 @@ def _surface(case: dict[str, Any], variant: str) -> str:
         return report.TOOL_SELECTION_VARIANT
     if variant == "direct":
         return "direct"
+    if variant == "host_code_mode":
+        return report.HOST_CODE_MODE_SURFACE
     surface = case.get("code_mode_surface")
     canonical = report._canonical_code_mode_surface(surface)
     if canonical is None:
@@ -525,7 +530,7 @@ def _summary_for_receipt(
 
 
 def _tool_count(summary: dict[str, Any], variant: str, tool_name: str) -> int | None:
-    if variant == "direct":
+    if variant in ("direct", "host_code_mode"):
         value = report._get_path(summary, f"canonical_calls.by_name.{tool_name}")
         return value if isinstance(value, int) else 0
     if variant == "code_mode":
@@ -567,6 +572,16 @@ def _runtime_evidence_proven(
             and not isinstance(canonical_total, bool)
             and canonical_total > 0
         )
+
+    if variant == "host_code_mode":
+        # Canonical calls prove the runtime lane, not JavaScript-cell/model-turn
+        # identity. The caller separately records its actual Host configuration.
+        canonical_total = report._get_path(summary, "canonical_calls.total")
+        counts = report._get_path(summary, "canonical_calls.by_name")
+        return (surface == report.HOST_CODE_MODE_SURFACE and composition_available
+                and type(canonical_total) is int and canonical_total == outer_total
+                and isinstance(counts, dict)
+                and not any(counts.get(name, 0) for name in report.CODE_MODE_TOOLS))
 
     if variant == "code_mode":
         expected_tool = CODE_MODE_TOOL_BY_SURFACE.get(surface or "")
@@ -640,7 +655,7 @@ def _long_handoff_terminal_proven(summary: dict[str, Any], variant: str) -> bool
     ):
         return False
 
-    if variant == "direct":
+    if variant in ("direct", "host_code_mode"):
         origin = "cargo_test"
         return (
             report._get_path(
@@ -709,7 +724,7 @@ def _guarded_multi_file_contract_proven(summary: dict[str, Any], variant: str) -
     ):
         return False
 
-    if variant == "direct":
+    if variant in ("direct", "host_code_mode"):
         if report._get_path(summary, "availability.edit_outcomes.available") is not True:
             return False
         if report._get_path(
@@ -786,11 +801,20 @@ class _GenericCoordinator:
                 raise BenchmarkError("fixture coordinator did not stop")
 
 
-def _generic_temporal_evidence_proven(case, summary, variant):
-    # The existing metadata report does not carry exact command stdout/exit order,
-    # read-revision identity or output receipts for these scenarios. A filesystem
-    # result or driver assertion cannot replace that missing evidence.
-    return case["id"] in {"generic_mixed_files_conflict", "generic_encoded_csv"}
+def _generic_temporal_evidence_proven(case, summary, variant, evidence=None, fixture_identity=None):
+    if case["id"] not in temporal.RUNTIME_CASES:
+        return False
+    identity = (summary or {}).get("benchmark") or {}
+    return (isinstance(evidence, dict) and type(evidence.get("schema_version")) is int and evidence.get("schema_version") == temporal.PROOF_SCHEMA_VERSION
+            and isinstance(fixture_identity, str) and re.fullmatch(r"[0-9a-f]{64}", fixture_identity) is not None
+            and evidence.get("fixture_identity") == fixture_identity
+            and evidence.get("available") is True and evidence.get("passed") is True
+            and evidence.get("case_id") == case["id"]
+            and evidence.get("case_fingerprint") == report._case_fingerprint(case)
+            and evidence.get("base_revision") == identity.get("base_revision")
+            and isinstance(evidence.get("checks"), dict)
+            and set(evidence["checks"]) == temporal.CHECK_NAMES[case["id"]]
+            and all(value is True for value in evidence["checks"].values()))
 
 
 def _run_sample(
@@ -816,12 +840,15 @@ def _run_sample(
     generic = case.get("target") == "generic_agent_disposable_fixture"
     coordinator = None
     fixture = None
+    fixture_token = None
+    capture_root = None
     completed: subprocess.CompletedProcess[bytes] | None = None
     try:
         surface = _surface(case, variant)
         if generic:
             workspace.mkdir(parents=True)
             fixture = GenericFixture(workspace, case["id"]).prepare()
+            fixture_token = temporal.fixture_identity(workspace)
             coordinator = _GenericCoordinator(fixture, root / "receipts" / (label + "-coordination"))
             coordinator.start()
         else:
@@ -848,6 +875,16 @@ def _run_sample(
                 "WEBCODEX_BENCH_FIXTURE_COORDINATION": str(coordinator.directory),
                 "WEBCODEX_BENCH_FIXTURE_ENVIRONMENT": json.dumps({"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC", "PYTHONHASHSEED": "0", "PYTHONNOUSERSITE": "1"}),
                 "WEBCODEX_BENCH_FIXTURE_COMMAND": pressure_script() if case["id"] == "generic_failure_repair" else ""})
+            if case["id"] == "generic_pending_independent_join":
+                env["WEBCODEX_BENCH_FIXTURE_COMMAND"] = temporal.PENDING_SCRIPT
+            if case["id"] == "generic_mixed_files_conflict":
+                env["WEBCODEX_BENCH_FIXTURE_COMMAND"] = mixed_note_script()
+            if case["id"] == "generic_encoded_csv":
+                env["WEBCODEX_BENCH_FIXTURE_COMMAND"] = encoded_csv_script()
+            if case["id"] in temporal.RUNTIME_CASES:
+                capture_root = root / "receipts" / (label + "-capture")
+                temporal.prepare_capture(capture_root, case["id"], base_revision, report._case_fingerprint(case), fixture_root=workspace)
+                env["WEBCODEX_BENCH_TEMPORAL_TRACE_ROOT"] = str(capture_root)
             env.update({"LANG": "C.UTF-8", "LC_ALL": "C.UTF-8", "TZ": "UTC", "PYTHONHASHSEED": "0", "PYTHONNOUSERSITE": "1"})
             env.pop("PYTHONPATH", None)
             env.pop("PYTHONHOME", None)
@@ -875,6 +912,8 @@ def _run_sample(
         oracle = fixture.oracle() if fixture is not None else _fixture_oracle(case, workspace, base_revision)
         if coordinator is not None and coordinator.error:
             oracle = {"available": True, "passed": False, "checks": [], "reason": "fixture coordination failed"}
+        if generic:
+            oracle["fixture_identity"] = fixture_token
         annotation = _annotation(
             case,
             variant=variant,
@@ -894,6 +933,13 @@ def _run_sample(
             case_manifest=case_manifest,
             workspace=workspace,
         )
+        temporal_evidence = None
+        if capture_root is not None and summary is not None:
+            audit_path = Path(receipt["audit_db"])
+            temporal_evidence = temporal.verify(
+                capture_root=capture_root, audit_db=audit_path if audit_path.is_absolute() else workspace / audit_path,
+                workflow_session_id=receipt["workflow_session_id"], case_id=case["id"],
+                base_revision=base_revision, fingerprint=report._case_fingerprint(case), fixture_root=workspace)
         effective_status = receipt["status"]
         reason_code: str | None = None
         if head_changed:
@@ -944,9 +990,10 @@ def _run_sample(
             and not _guarded_multi_file_contract_proven(summary, variant)
         ):
             effective_status = "partial"
-        if generic and effective_status == "pass" and not _generic_temporal_evidence_proven(case, summary, variant):
-            effective_status = "partial"
-            reason_code = "generic_temporal_evidence_unavailable"
+        if generic and effective_status == "pass" and not _generic_temporal_evidence_proven(case, summary, variant, temporal_evidence, fixture_token):
+            contradicted = temporal_evidence is not None and temporal_evidence.get("available") is True and temporal_evidence.get("passed") is False
+            effective_status = "fail" if contradicted else "partial"
+            reason_code = "generic_temporal_semantics_failed" if contradicted else "generic_temporal_evidence_unavailable"
         return {
             "case_id": case["id"],
             "variant": variant,
@@ -955,6 +1002,7 @@ def _run_sample(
             "driver_exit_code": completed.returncode,
             **({"reason_code": reason_code} if reason_code is not None else {}),
             "fixture_oracle": oracle,
+            **({"temporal_evidence": temporal_evidence} if temporal_evidence is not None else {}),
             "summary": summary,
         }
     except DriverPlatformUnsupported:
@@ -991,6 +1039,10 @@ def _run_sample(
             "summary": None,
         }
     finally:
+        if capture_root is not None:
+            # Only the benchmark-created sibling of the fixture is removable;
+            # receipt-supplied capture directories are never followed/deleted.
+            shutil.rmtree(capture_root)
         if coordinator is not None:
             coordinator.close()
             shutil.rmtree(coordinator.directory, ignore_errors=True)
@@ -1061,8 +1113,9 @@ def _paired_delta_summary(pairs: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _pair_order(pair_index: int) -> tuple[str, str]:
-    return VARIANTS if pair_index % 2 == 0 else tuple(reversed(VARIANTS))
+def _pair_order(pair_index: int, candidate: str = "code_mode") -> tuple[str, str]:
+    variants = ("direct", candidate)
+    return variants if pair_index % 2 == 0 else tuple(reversed(variants))
 
 
 def run_benchmark(
@@ -1072,7 +1125,10 @@ def run_benchmark(
     driver_argv: list[str],
     case_ids: list[str],
     pairs: int,
+    candidate: str = "code_mode",
 ) -> dict[str, Any]:
+    if candidate not in ("code_mode", "host_code_mode"):
+        raise BenchmarkError("candidate must be code_mode or host_code_mode")
     if pairs < 1:
         raise BenchmarkError("pairs must be at least 1")
     if len(set(case_ids)) != len(case_ids):
@@ -1114,7 +1170,7 @@ def run_benchmark(
             pair_outputs: list[dict[str, Any]] = []
             for pair_index in range(pairs):
                 samples: list[dict[str, Any]] = []
-                order = _pair_order(pair_index)
+                order = _pair_order(pair_index, candidate)
                 for ordinal, variant in enumerate(order):
                     samples.append(
                         _run_sample(
@@ -1135,7 +1191,7 @@ def run_benchmark(
                         "pair_index": pair_index,
                         "order": list(order),
                         "samples": samples,
-                        "comparison": _comparison(by_variant["direct"], by_variant["code_mode"]),
+                        "comparison": _comparison(by_variant["direct"], by_variant[candidate]),
                     }
                 )
             cases_out.append({
@@ -1153,6 +1209,7 @@ def run_benchmark(
         return {
             "schema_version": 1,
             "kind": "agent_loop_benchmark",
+            "candidate_variant": candidate,
             "base_revision": resolved,
             "pair_count": pairs,
             "case_ids": case_ids,
@@ -1161,7 +1218,7 @@ def run_benchmark(
             "cases": cases_out,
             "notes": [
                 "each sample ran in a fresh detached Git worktree or ordinary-directory generic fixture",
-                "pair order alternates direct/code_mode then code_mode/direct",
+                "pair order alternates direct/candidate then candidate/direct",
                 "driver-reported unsupported, partial, and failed samples remain in the result",
                 "comparisons reuse agent_loop_report exact base/case fingerprint/correctness gates",
                 "outer-call metrics remain proxies; exact model round trips stay unavailable without Host turn evidence",
@@ -1283,6 +1340,9 @@ def _strict_passed(result, requested_cases, repetitions, manifest=None):
     if len(cases) != len(requested_cases) or {case.get("case_id") for case in cases} != set(requested_cases):
         return False
     selection = result.get("experiment") == "tool_selection"
+    candidate = result.get("candidate_variant", "code_mode")
+    if candidate not in ("code_mode", "host_code_mode"):
+        return False
     for case in cases:
         definition = definitions[case["case_id"]]
         if selection:
@@ -1293,7 +1353,7 @@ def _strict_passed(result, requested_cases, repetitions, manifest=None):
             pairs = case.get("pairs", [])
             if len(pairs) != repetitions or {p.get("pair_index") for p in pairs} != set(range(repetitions)):
                 return False
-            if any(len(p.get("samples", [])) != 2 or {s.get("variant") for s in p["samples"]} != set(VARIANTS) for p in pairs):
+            if any(len(p.get("samples", [])) != 2 or {s.get("variant") for s in p["samples"]} != {"direct", candidate} for p in pairs):
                 return False
             samples = [sample for pair in pairs for sample in pair["samples"]]
         for sample in samples:
@@ -1312,7 +1372,7 @@ def _strict_passed(result, requested_cases, repetitions, manifest=None):
                 return False
             if definition.get("target") == "generic_agent_disposable_fixture":
                 if (oracle.get("available") is not True or oracle.get("passed") is not True
-                    or not _generic_temporal_evidence_proven(definition, summary, sample.get("variant"))):
+                    or not _generic_temporal_evidence_proven(definition, summary, sample.get("variant"), sample.get("temporal_evidence"), oracle.get("fixture_identity"))):
                     return False
             elif oracle.get("available") and oracle.get("passed") is not True:
                 return False
@@ -1326,6 +1386,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--driver", required=True, help="Host driver command, parsed with shlex; no shell is invoked")
     parser.add_argument("--case-id", action="append", dest="case_ids")
     parser.add_argument("--pairs", type=int, default=2)
+    parser.add_argument("--candidate", choices=("code_mode", "host_code_mode"), default="code_mode",
+                        help="paired candidate lane; existing nested Code Mode remains the default")
     parser.add_argument("--experiment", choices=("forced_lanes", "tool_selection"), default="forced_lanes")
     parser.add_argument("--samples", type=int, default=2, help="repetitions per case in the tool_selection experiment")
     parser.add_argument("--strict", action="store_true", help="fail unless every requested case/repetition passes with required runtime evidence")
@@ -1350,6 +1412,7 @@ def main(argv: list[str] | None = None) -> int:
                 repo=args.repo.resolve(), base_revision=args.base_revision,
                 driver_argv=driver_argv,
                 case_ids=args.case_ids or list(DEFAULT_CASES), pairs=args.pairs,
+                candidate=args.candidate,
             )
         if args.output:
             args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -67,6 +67,18 @@ For live Agent comparisons record the connection path (Apps, direct MCP or nativ
 Host mode and model configuration separately; a Server manifest cannot prove which
 schemas a Host loaded. See [MCP client contracts](../implementation/mcp-client-contract-alignment.md).
 
+The opt-in [generic runtime verifier](../implementation/chat-task-loop.md)
+requires case-specific actual runtime proof and the independent final-file
+oracle for all six generic cases. It binds a successful path bootstrap to the
+coordinator's exact fixture root, Session and Project. Bootstrap-only audits,
+arbitrary/no-op scripts and driver-declared passes cannot qualify. Schema-2
+proof must match the sample's fixture identity; old results remain readable
+without automatically receiving new strict acceptance. `host_code_mode` is
+an explicit candidate lane; the existing nested Code Mode default is unchanged.
+Missing/unprovable evidence remains partial, including unsupported baseline CSV
+output receipts. See the linked contract for the controlled script/structured
+edit paths and disposable full-capture requirements.
+
 Session-filtered counts cover only calls linked to that exact Session. Discovery
 or rejected bootstrap calls made before a Session is selected can be unlinked.
 An explicit business `session_id` also does not select the outer recorder: a

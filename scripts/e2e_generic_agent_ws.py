@@ -38,6 +38,7 @@ BASELINE = "05d45f376d3265490de28090b9c5b0150dbacd8b"
 UPSTREAM = "05d45f37"
 SENTINEL = "GENERIC_ACCEPTANCE_UNIQUE_SENTINEL_9d06"
 EXTERNAL_SENTINEL = "EXTERNAL_WRITER_SENTINEL_c741"
+PENDING_SCRIPT = "import sys; sys.stdin.read(); print('controlled-job-complete',flush=True)"
 
 
 def sha(path):
@@ -77,6 +78,14 @@ GENERIC_CASES = frozenset(("generic_mixed_files_conflict", "generic_encoded_csv"
 def pressure_script(failed=True):
     script = f"for i in range(2500): print('pressure-' + str(i))\nprint({SENTINEL!r})\n"
     return "import sys\n" + script + ("print('expected failure',file=sys.stderr)\nsys.exit(7)\n" if failed else "")
+
+
+def mixed_note_script():
+    return "from pathlib import Path\nimport shutil\nsrc=Path('input/note.txt'); dst=Path('sorted/note.txt')\nif dst.exists(): dst=dst.with_name('note-2.txt')\nshutil.copyfile(src,dst)\n"
+
+
+def encoded_csv_script():
+    return "import csv,json\nrows=[]\nfor file,encoding,n,v in [('a.csv','utf-8','name','value'),('b.csv','utf-16','姓名','数量')]:\n with open(file,encoding=encoding,newline='') as f:\n  rows.extend({'name':r[n],'value':int(r[v])} for r in csv.DictReader(f))\nwith open('merged.csv','w',encoding='utf-8',newline='') as f:\n w=csv.DictWriter(f,fieldnames=['name','value'],lineterminator='\\n');w.writeheader();w.writerows(rows)\nwith open('report.json','w',encoding='utf-8') as f: json.dump({'count':len(rows),'total':sum(r['value'] for r in rows)},f)\n"
 
 
 class GenericFixture:
@@ -184,6 +193,8 @@ class GenericFixture:
             checks.append({"path": "report.json", "passed": valid})
         elif self.case_id == "generic_pending_independent_join":
             exact("independent.txt", b"independent work completed")
+        elif self.case_id == "generic_failure_repair":
+            checks.append({"kind": "fixture_unchanged", "passed": not any(self.root.iterdir())})
         elif self.case_id == "generic_stale_read_revision":
             exact("stale.txt", b"task value: after\n" + (EXTERNAL_SENTINEL + "\n").encode())
             checks.append({"kind": "external_writer_coordination", "passed": self.external_written and self.rejection_checked})
@@ -455,7 +466,7 @@ class GenericSmoke(InteractiveSmoke):
             self.call("transfer_project_artifact", {"source_project": self.project_ref,
                 "source_path": "input/" + name, "destination_project": self.project_ref,
                 "destination_path": "sorted/" + name}, direct=False)
-        self.script("from pathlib import Path\nimport shutil\nsrc=Path('input/note.txt'); dst=Path('sorted/note.txt')\nif dst.exists(): dst=dst.with_name('note-2.txt')\nshutil.copyfile(src,dst)\n")
+        self.script(mixed_note_script())
         check({p.name: sha(p) for p in src.iterdir()} == original, "input changed")
         for name in binary_fixtures():
             check(sha(destination / name) == original[name], "binary transfer SHA: " + name)
@@ -466,11 +477,16 @@ class GenericSmoke(InteractiveSmoke):
         return {"input_sha256": original, "output_sha256": {p.name: sha(p) for p in destination.iterdir()},
                 "input_count": 4, "output_count": 5, "conflict_preserved": True, "binary_path": "artifact transfer"}
 
-    def data(self):
+    def data(self, *, structured_edit=False):
         fixture = GenericFixture(self.project_dir, "generic_encoded_csv").prepare()
         inputs = {p: sha(self.project_dir / p) for p in ["a.csv", "b.csv"]}
-        self.script("import csv,json\nrows=[]\nfor file,encoding,n,v in [('a.csv','utf-8','name','value'),('b.csv','utf-16','姓名','数量')]:\n with open(file,encoding=encoding,newline='') as f:\n  rows.extend({'name':r[n],'value':int(r[v])} for r in csv.DictReader(f))\nwith open('merged.csv','w',encoding='utf-8',newline='') as f:\n w=csv.DictWriter(f,fieldnames=['name','value'],lineterminator='\\n');w.writeheader();w.writerows(rows)\nwith open('report.json','w',encoding='utf-8') as f: json.dump({'count':len(rows),'total':sum(r['value'] for r in rows)},f)\n")
         expected = "name,value\nAlice,2\nBob,3\n陈,5\n丁,7\n".encode()
+        if structured_edit:
+            self.call("edit_project_files", {"project": self.project_ref, "changes": [
+                {"kind": "create", "path": "merged.csv", "content": expected.decode()},
+                {"kind": "create", "path": "report.json", "content": json.dumps({"count": 4, "total": 17})}]}, direct=True)
+        else:
+            self.script(encoded_csv_script())
         actual = (self.project_dir / "merged.csv").read_bytes()
         check(actual == expected, "independent CSV bytes")
         rows = list(csv.DictReader(io.StringIO(actual.decode("utf-8"))))
@@ -507,7 +523,7 @@ class GenericSmoke(InteractiveSmoke):
 
     def pending(self):
         offset = len(self.calls)
-        job = self.start_pipe("import sys; sys.stdin.read(); print('controlled-job-complete',flush=True)", 30)
+        job = self.start_pipe(PENDING_SCRIPT, 30)
         self.script("from pathlib import Path\nPath('independent.txt').write_text('independent work completed')\n")
         self.write(job, "release", close=True)
         item = self.terminal(job)  # Exactly one readiness join, then observe the SAME Job.
@@ -575,9 +591,11 @@ class GenericSmoke(InteractiveSmoke):
                 "rejected_error_kind": rejected["error_kind"], "rejected_bytes_unchanged": True,
                 "external_change_preserved": True, "fresh_read_before_successful_edit": True}
 
-    def missing_output(self):
+    def missing_output(self, *, reuse_session=False):
         check(not (self.project_dir / "missing-result.csv").exists(), "negative fixture unexpectedly exists")
-        started = self.call("work_on_project", {"project": self.project, "instruction": "Verify missing-output closeout blocking"}, direct=True)
+        started = ({"project_ref": self.project_ref, "session_ref": self.session_ref} if reuse_session
+                   else self.call("work_on_project", {"project": self.project,
+                       "instruction": "Verify missing-output closeout blocking"}, direct=True))
         output = self.call("finish_coding_task", {"project": started["project_ref"],
             "session_id": started["session_ref"], "summary_only": True,
             "outputs": ["missing-result.csv"]}, direct=False)
