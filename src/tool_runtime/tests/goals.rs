@@ -1181,6 +1181,7 @@ fn goal_runtime_controller_is_explicit_authorized_and_readable() {
         1,
         None,
         None,
+        None,
         Some(replacement_id.clone()),
         None,
         None,
@@ -2028,4 +2029,41 @@ async fn workflow_session_link_is_identity_only_and_finish_coding_task_does_not_
     assert_eq!(goal.output["goal"]["summary"]["lifecycle"], "active");
     assert_eq!(goal.output["goal"]["summary"]["revision"], 2);
     assert!(goal.output["goal"]["summary"]["terminal_at_unix_ms"].is_null());
+}
+
+#[tokio::test]
+async fn update_goal_completion_conditions_dispatch_preserves_owner_and_revision() {
+    let (_temp, _db, runtime) = runtime_with_goal_db();
+    let owner = goal_activity_auth("conditions-owner");
+    let foreign = goal_activity_auth("conditions-other");
+    let id = create_goal(&runtime, Some(&owner), "conditions-dispatch-create");
+    let args = json!({"goal_id":id,"expected_revision":1,"completion_conditions":["  Explicit acceptance  "],"idempotency_key":"conditions-dispatch-edit"});
+    let edited = runtime
+        .dispatch_with_auth(
+            ToolCall::from_tool_name("update_goal", args.clone()).unwrap(),
+            Some(&owner),
+        )
+        .await;
+    assert!(edited.success, "{:?}", edited.output);
+    assert_eq!(
+        edited.output["goal"]["plan"]["completion_conditions"],
+        json!(["Explicit acceptance"])
+    );
+    assert_eq!(edited.output["goal"]["summary"]["revision"], 2);
+    let replay = runtime
+        .dispatch_with_auth(
+            ToolCall::from_tool_name("update_goal", args.clone()).unwrap(),
+            Some(&owner),
+        )
+        .await;
+    assert!(replay.success, "{:?}", replay.output);
+    assert_eq!(replay.output["replayed"], true);
+    let rejected = runtime
+        .dispatch_with_auth(
+            ToolCall::from_tool_name("update_goal", args).unwrap(),
+            Some(&foreign),
+        )
+        .await;
+    assert!(!rejected.success);
+    assert_eq!(rejected.output["error_kind"], "goal_not_found");
 }

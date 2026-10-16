@@ -15,7 +15,7 @@ A1 adds a concrete communication domain without changing the meaning of Workflow
 | Wake Delivery Attempt | One Endpoint/generation-bound attempt to deliver a Wake Intent through a continuation adapter | the durable communication fact or a grant of execution authority |
 | Agent Task | Planned durable asynchronous work accepted/created for an Agent | Conversation Message, Workflow Session todo, Job, or execution authority |
 | Agent Wait | Caller-owned durable one-shot rendezvous over 1..8 exact AgentTask-terminal sources with closed `any|all` mode | a Task dependency graph, Goal attention policy, Host binding, scheduler, or source-authority grant |
-| Goal | High-level durable workflow/progress truth: fixed completion intent, bounded plan/checkpoints, lifecycle and controller routing | Task execution ownership or inherited authority |
+| Goal | High-level durable workflow/progress truth: revision-fenced completion intent, bounded plan/checkpoints, lifecycle and controller routing | Task execution ownership or inherited authority |
 | Workflow Session | Concrete current-work context: existing execution, provenance, validation, Job, workspace, todo, and guidance | a chat room or a Goal |
 
 An Agent Card contains a mutable non-unique handle, display name, description, bounded specialty labels, profile revision, and timestamps. These fields are self-description metadata. Canonical identity is only the Server-generated `agent_id`, and neither identity nor metadata grants Project, filesystem, Runner, Agent Task, or Workflow Session authority.
@@ -110,7 +110,7 @@ Goal-correlated terminal attention reuses that carrier without reusing A4b's act
 The WebCodex-owned startup workflow and `single_window_goal_workflow` recommended
 flow now use durable Goals for substantial multi-step/cross-turn work in any
 repository, independently of `AGENTS.md`. Explicitly correlate the current Workflow
-Session, establish fixed completion intent and bounded steps, checkpoint recoverable
+Session, establish bounded completion intent and fixed steps, checkpoint recoverable
 milestones with the single revision-fenced/idempotent `checkpoint_goal`, then
 freshly verify/review and explicitly complete. `finish_coding_task` surfaces sparse
 owned active Goal follow-up but never completes a Goal automatically.

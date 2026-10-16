@@ -1,9 +1,9 @@
 use super::agent_task::AGENT_TASK_ID_PREFIX;
 use super::communication::DURABLE_AGENT_ID_PREFIX;
 use super::goal_plan::{
-    GoalCheckpoint, GoalPlan, GoalPlanHistory, GoalPlanReplacement, GoalPlanRevision, NewGoalStep,
-    MAX_GOAL_PLAN_BYTES, MAX_GOAL_PLAN_HISTORY_READ_BYTES, MAX_GOAL_PLAN_REVISIONS,
-    MAX_GOAL_PLAN_REVISION_REASON_BYTES,
+    normalize_completion_conditions, GoalCheckpoint, GoalPlan, GoalPlanHistory,
+    GoalPlanReplacement, GoalPlanRevision, NewGoalStep, MAX_GOAL_PLAN_BYTES,
+    MAX_GOAL_PLAN_HISTORY_READ_BYTES, MAX_GOAL_PLAN_REVISIONS, MAX_GOAL_PLAN_REVISION_REASON_BYTES,
 };
 use super::store_primitives::{
     allocate_identity, digest_json, digest_text, now_unix_ms, validate_communication_principal,
@@ -98,6 +98,7 @@ pub struct NewGoal {
 
 #[derive(Debug, Clone, Default)]
 pub struct GoalPatch {
+    pub completion_conditions: Option<Vec<String>>,
     pub title: Option<String>,
     pub objective: Option<String>,
     pub controller_agent_id: Option<String>,
@@ -741,6 +742,10 @@ impl Database {
             .as_deref()
             .map(validate_objective)
             .transpose()?;
+        let completion_conditions = patch
+            .completion_conditions
+            .map(normalize_completion_conditions)
+            .transpose()?;
         let controller_agent_id =
             validate_optional_controller_agent_id(patch.controller_agent_id.as_deref())?;
         let terminal_reason = patch
@@ -750,6 +755,7 @@ impl Database {
             .transpose()?;
         if title.is_none()
             && objective.is_none()
+            && completion_conditions.is_none()
             && controller_agent_id.is_none()
             && patch.lifecycle.is_none()
             && terminal_reason.is_none()
@@ -766,7 +772,7 @@ impl Database {
             ));
         }
         let idempotency_key = validate_idempotency_key(idempotency_key)?;
-        let request_hash = goal_request_hash(&json!({
+        let mut request = json!({
             "goal_id": goal_id,
             "expected_revision": expected_revision,
             "title": title,
@@ -774,7 +780,12 @@ impl Database {
             "controller_agent_id": controller_agent_id,
             "lifecycle": patch.lifecycle,
             "terminal_reason": terminal_reason,
-        }));
+        });
+        // Preserve historical hashes for updates that omit completion intent.
+        if let Some(conditions) = &completion_conditions {
+            request["completion_conditions"] = json!(conditions);
+        }
+        let request_hash = goal_request_hash(&request);
 
         let mut conn = self.lock_connection(crate::StoreDomain::Goal);
         let transaction = conn
@@ -829,8 +840,14 @@ impl Database {
         let target_objective = objective.unwrap_or_else(|| current.objective.clone());
         let target_controller_agent_id =
             controller_agent_id.or_else(|| current.controller_agent_id.clone());
+        let mut target_plan = current.plan.clone();
+        if let Some(conditions) = completion_conditions {
+            target_plan.completion_conditions = conditions;
+        }
+        target_plan.validate_persisted(current.summary.created_at_unix_ms, now)?;
         let state_changed = target_title != current.summary.title
             || target_objective != current.objective
+            || target_plan != current.plan
             || target_controller_agent_id != current.controller_agent_id
             || target_lifecycle != current.summary.lifecycle
             || terminal_reason != current.terminal_reason;
@@ -846,7 +863,7 @@ impl Database {
                     "UPDATE wc_goals
                      SET title = ?2, objective = ?3, controller_agent_id = ?4, lifecycle = ?5,
                          revision = revision + 1, updated_at_unix_ms = ?6,
-                         terminal_at_unix_ms = ?7, terminal_reason = ?8
+                         terminal_at_unix_ms = ?7, terminal_reason = ?8, plan_json = ?9
                      WHERE goal_id = ?1",
                     params![
                         goal_id,
@@ -857,6 +874,7 @@ impl Database {
                         now,
                         terminal_at,
                         terminal_reason,
+                        target_plan.persisted_json()?,
                     ],
                 )
                 .map_err(goal_store_error)?;

@@ -152,7 +152,7 @@ substrate support asynchronous Agent work without introducing a scheduler.
 
 ## Durable Goal workflow — G4/G6/G7
 
-Goal is high-level **durable workflow/progress truth**: fixed bounded completion
+Goal is high-level **durable workflow/progress truth**: revision-fenced bounded completion
 intent and mechanical milestones, an explicit controller routing identity, and an
 `active | completed | cancelled` lifecycle. Workflow Session is the concrete
 current-work context: Project, validation, Jobs, provenance, and recovery. Task /

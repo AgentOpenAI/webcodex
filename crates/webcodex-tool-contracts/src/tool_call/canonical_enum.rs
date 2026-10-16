@@ -1870,7 +1870,7 @@ pub enum ToolCall {
             pattern = "^(wc_sess_([A-Za-z0-9_-]{16}|[0-9a-f]{32})|~s[1-9][0-9]{0,18})$"
         ))]
         session_id: String,
-        /// Fixed durable completion intent; the Server does not evaluate natural-language conditions.
+        /// Durable completion intent, editable with update_goal; the Server does not evaluate natural-language conditions.
         /// At most 8 conditions, each additionally bounded to 512 UTF-8 bytes.
         #[serde(default)]
         #[schemars(schema_with = "goal_conditions_schema")]
@@ -1897,7 +1897,7 @@ pub enum ToolCall {
 
     /// Create explicit high-level durable intent/control state without execution authority.
     CreateGoal {
-        /// Fixed durable completion intent; the Server does not evaluate natural-language conditions.
+        /// Durable completion intent, editable with update_goal; the Server does not evaluate natural-language conditions.
         /// At most 8 conditions, each additionally bounded to 512 UTF-8 bytes.
         #[serde(default)]
         #[schemars(schema_with = "goal_conditions_schema")]
@@ -2070,6 +2070,12 @@ pub enum ToolCall {
         #[schemars(length(min = 1, max = 8192))]
         #[serde(default)]
         objective: Option<String>,
+        /// Optional replacement completion intent. Omission preserves it; an empty list clears it.
+        /// At most 8 nonempty trimmed conditions, each bounded to 512 UTF-8 bytes by the Server.
+        /// Existing steps and progress are preserved; conditions are never evaluated automatically.
+        #[serde(default)]
+        #[schemars(schema_with = "goal_conditions_schema")]
+        completion_conditions: Option<Vec<String>>,
         /// Optional replacement durable Goal controller Agent. Omission preserves the current routing identity;
         /// setting it re-authorizes the exact Agent and never inherits authority from prior routing.
         #[schemars(regex(pattern = "^wc_dagent_[A-Za-z0-9_-]{16}$"))]

@@ -51,6 +51,18 @@ Bootstrap 或 discovery 返回 `project_ref` 后，普通 Project-scoped tool ca
 
 默认情况下，它还会返回一个很小且有界的 `extensions` selection catalog：Skill metadata 来自 canonical 的 project / Runner-configured `skills.roots` / Runner-managed Skill Store 三类来源；Plugin metadata 只包含 configured working directory 与当前 Project root 匹配、且已 ready/committed 的 provider。该 metadata 不授予任何 authority，也不会自动读取 Skill body 或创建 Plugin binding；模型选择后使用 `read_skill_file` 读取 Skill 文本，`run_skill_resource` 只执行可信 Runner-configured live `scripts/` resource（由 `expected_definition_revision` fence definition）或 Runner-installed managed resource（另由 `expected_package_revision` fence package），Plugin 则走 `plugin_tool describe -> call`。Configured resource bytes 会一直保持 live 到实际执行时，并不会预先被 package revision 固定。只有当前模型上下文仍明确保留这些 discovery metadata 时，才应设置 `include_extension_catalog=false`。
 
+跨轮次的重要工作可以用 durable Goal 记录目标和完成标准，无需用户管理步骤。`update_goal` 使用精确的 `expected_revision` 和 `idempotency_key` 编辑 active Goal：省略 `completion_conditions` 会保留原列表，传入 `[]` 则清空。替换条件沿用创建时的限制（最多八项，每项去除首尾空白后非空，且不超过 512 UTF-8 字节）。编辑完成标准保留已有步骤、checkpoint 和进度；不会自动判断验收、恢复执行或重新打开 completed/cancelled Goal。revision 冲突时重新读取；结果不确定时复用同一个 key 和完全相同的请求。
+
+## Workbench 应用
+
+**Projects & Resources** Workbench 在现有 Project 与 Session 资源浏览器中增加 Files、Work 和 Goals 视图。文件预览和引用为只读；点击 **Add selected references** 后，如果 Host 声明了受支持的 modality，Workbench 会更新 Host model context。它不会编辑 Project 文件。Goal 属于当前 communication account，可跨 Project 使用。
+
+Workbench 实例名称默认是 `WebCodex`。在 Server 设置 `WEBCODEX_INSTANCE_NAME` 可更改所有用户看到的实例名称。每个已认证账户也可在 Workbench 设置中保存自己的显示名称覆盖值；清除后会恢复为配置的实例名称。升级后若看不到 Workbench 命令，请刷新 Host 的 tool list 或重新连接 Server，让 Host 发现当前 App 工具。原生 Host 渲染还有独立的 capability 要求；本地 fixture 测试不能证明真实 Host 已验证。
+
+提交工作时必须明确选择 Project、属于当前用户的 Agent，以及一个当前确实可用的精确 route：当前 chat 中已验证的 continuation，或所选 Project 的 Runner 提供的 provider。Workbench 会创建 canonical AgentTask 和 Attempt，并通过这个已有 route 分发，不接受自由格式命令，也不会创建新的 execution backend。若提交结果不确定，使用同一草稿、同一个 key 和完全相同的字段重试；若要发起不同提交，应先检查返回的 Task 或 reconcile 现有 Task。可以选择把 Task 关联到当前用户拥有的 Goal。
+
+Session todo 只有在明确选择 Project 和一个有权限访问的 Workflow Session 后才会显示。Workbench 不会根据最近活动推断 Session。历史 32-hex Goal ID 来自 stable 发布前的开发版本；受支持的 stable 版本使用 compact `wc_goal_` ID。不要手工改写数据库 ID。如果旧开发数据库导致 Goal ID 无效或出现存储错误，请保留数据库备份，并向维护者提供 WebCodex 版本和已清理敏感信息的错误，以获取对应版本的迁移指导；不要首先删除或重置数据库。参见 [Workbench implementation notes](implementation/workbench-resource-references.md)。
+
 ### 切回明确的工作上下文
 
 已明确选择 Active Session 时，可以直接调用 `work_on_project(session_id="~s12", instruction="继续评审")`，省略 `project`、`client_id` 和 `path`。默认的 `checkout` 模式会授权这个精确 Session，取得它绑定的 Project，重新检查当前项目访问权限，再恢复同一个 Session。后续普通 Project 工具使用返回的 `project_ref`。显式传入 Project 仍然有效，但必须匹配；`_wc.record` 仍仅为独立的记录来源，不会替代业务目标。

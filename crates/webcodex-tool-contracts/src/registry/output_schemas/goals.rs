@@ -76,7 +76,7 @@ fn mechanical_plan_schema() -> Value {
     json!({
         "type": "object", "additionalProperties": false,
         "properties": {
-            "completion_conditions": {"type": "array", "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 512}, "description": "Fixed durable completion intent, not Server-evaluated predicates."},
+            "completion_conditions": {"type": "array", "maxItems": 8, "items": {"type": "string", "minLength": 1, "maxLength": 512}, "description": "Revision-fenced durable completion intent, editable with update_goal; not Server-evaluated predicates."},
             "steps": {"type": "array", "maxItems": 32, "items": goal_step_schema()},
             "progress_summary": progress_summary_schema(),
             "checkpoint_at_unix_ms": nullable_schema("integer", "Last committed recovery checkpoint, or null before the first checkpoint.")

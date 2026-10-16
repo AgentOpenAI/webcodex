@@ -8,6 +8,7 @@ mod request_policy;
 mod resources;
 mod response;
 mod tools;
+mod workbench;
 
 #[cfg(test)]
 pub(crate) use tools::adaptive_runtime_gateway_input_schema_for_test;
@@ -1350,8 +1351,15 @@ async fn handle_mcp_request_with_lifecycle(
         }
         "ping" if !stateless_2026 => rpc_result(id, json!({})),
         "tools/list" => {
-            return tools::handle_list(id, auth, stateless_2026, compact_schemas, mcp_app_enabled)
-                .await;
+            return tools::handle_list_with_runtime(
+                runtime,
+                id,
+                auth,
+                stateless_2026,
+                compact_schemas,
+                mcp_app_enabled,
+            )
+            .await;
         }
         "resources/list" if runtime_resource_method => {
             return resources::handle_list(runtime, id, mcp_app_enabled);

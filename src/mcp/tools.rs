@@ -330,6 +330,41 @@ pub(super) fn mcp_tools_list_payload_with_features_for_auth(
         .map(|spec| mcp_tool_descriptor_json(spec, compact, app_enabled, Some(stateless_2026)))
         .collect::<Vec<_>>();
     if app_enabled && stateless_2026 {
+        for name in super::workbench::CANONICAL_TOOLS {
+            if tools.iter().any(|tool| tool["name"] == *name)
+                || !crate::tool_runtime::kernel::runtime_tool_scope_allows_discovery(auth, name)
+            {
+                continue;
+            }
+            if let Some(definition) =
+                crate::tool_runtime::tool_definition::lookup_tool_definition(name)
+            {
+                if let Some(model) = definition.model_spec {
+                    let spec = ToolDescriptor {
+                        name: (*name).into(),
+                        description: model.description.into(),
+                        discovery_keywords: model.discovery_keywords,
+                    };
+                    let mut value = mcp_tool_descriptor_json(spec, compact, false, None);
+                    attach_app_visibility(&mut value);
+                    tools.push(value);
+                }
+            }
+        }
+        tools.extend(
+            super::workbench::descriptors(compact)
+                .into_iter()
+                .filter(|tool| match tool["name"].as_str() {
+                    Some("update_workbench_settings") => {
+                        auth.is_some_and(|a| a.kind != crate::auth::AuthKind::OpenAnonymous)
+                            && check_runtime_tool_scope(auth, "update_goal").is_ok()
+                    }
+                    Some("submit_workbench_work") => {
+                        check_runtime_tool_scope(auth, "create_agent_task").is_ok()
+                    }
+                    _ => true,
+                }),
+        );
         // The View uses the existing authorized Session discovery implementation.
         if !tools.iter().any(|tool| tool["name"] == "list_sessions") {
             if let Some(definition) =
@@ -770,6 +805,11 @@ pub(super) fn add_stateless_workflow_recorder_metadata(payload: &mut Value) {
             )
         ) || tool_name == Some(WORK_RESULT_THREAD_ENTRYPOINT_TOOL_NAME)
             || tool_name.is_some_and(is_host_continuation_app_tool_name)
+            || (tool.pointer("/_meta/ui/visibility") == Some(&json!(["app"]))
+                && tool_name.is_some_and(|name| {
+                    super::workbench::is_adapter_tool(name)
+                        || super::workbench::CANONICAL_TOOLS.contains(&name)
+                }))
         {
             continue;
         }
@@ -1426,7 +1466,38 @@ pub(super) fn mcp_runtime_tool_result(
     }
 }
 
+pub(super) async fn handle_list_with_runtime(
+    runtime: &ToolRuntime,
+    id: Option<Value>,
+    auth: Option<&AuthContext>,
+    stateless_2026: bool,
+    compact_schemas: bool,
+    app_enabled: bool,
+) -> McpOutcome {
+    handle_list_inner(
+        Some(runtime),
+        id,
+        auth,
+        stateless_2026,
+        compact_schemas,
+        app_enabled,
+    )
+    .await
+}
+
+#[cfg(test)]
 pub(super) async fn handle_list(
+    id: Option<Value>,
+    auth: Option<&AuthContext>,
+    stateless_2026: bool,
+    compact_schemas: bool,
+    app_enabled: bool,
+) -> McpOutcome {
+    handle_list_inner(None, id, auth, stateless_2026, compact_schemas, app_enabled).await
+}
+
+async fn handle_list_inner(
+    runtime: Option<&ToolRuntime>,
     id: Option<Value>,
     auth: Option<&AuthContext>,
     stateless_2026: bool,
@@ -1439,6 +1510,19 @@ pub(super) async fn handle_list(
         stateless_2026,
         auth,
     );
+    if let Some(runtime) = runtime.filter(|_| app_enabled) {
+        let settings = runtime.workbench_settings(auth);
+        if let Some(title) = settings.output.get("display_name").and_then(Value::as_str) {
+            if let Some(tools) = result.get_mut("tools").and_then(Value::as_array_mut) {
+                if let Some(tool) = tools
+                    .iter_mut()
+                    .find(|tool| tool["name"] == "open_webcodex_workbench")
+                {
+                    tool["title"] = json!(title);
+                }
+            }
+        }
+    }
     if let Some(tools) = result.get_mut("tools").and_then(Value::as_array_mut) {
         tools.push(adaptive_runtime_gateway_tool_json(compact_schemas));
     }

@@ -10,7 +10,7 @@ pub(in crate::mcp) const MCP_COMPUTER_UI_RESOURCE_TTL_MS: u64 = 0;
 pub(in crate::mcp) const MCP_DOCX_UI_RESOURCE_URI: &str = "ui://webcodex/docx/v2";
 pub(in crate::mcp) const MCP_DOCX_APP_HTML: &str = include_str!("../../mcp_docx_app.html");
 pub(in crate::mcp) const MCP_RESULT_UI_RESOURCE_URI: &str = "ui://webcodex/changes/v4";
-pub(in crate::mcp) const MCP_WORKBENCH_UI_RESOURCE_URI: &str = "ui://webcodex/workbench/v3";
+pub(in crate::mcp) const MCP_WORKBENCH_UI_RESOURCE_URI: &str = "ui://webcodex/workbench/v5";
 pub(in crate::mcp) const MCP_WORK_RESULT_UI_RESOURCE_URI: &str = "ui://webcodex/work-result/v31";
 pub(in crate::mcp) const MCP_SPREADSHEET_UI_RESOURCE_URI: &str = "ui://webcodex/spreadsheet/v3";
 pub(in crate::mcp) const MCP_GOAL_PLAN_UI_RESOURCE_URI: &str = "ui://webcodex/goal-plan/v9";
@@ -64,11 +64,11 @@ pub(super) static BUILTIN_MCP_APPS: &[BundledMcpApp] = &[
     },
     BundledMcpApp {
         listing: Some(AppListing {
-            name: "WebCodex Projects & Resources",
-            description: "Readonly project selection, work overview and authorized resource references.",
+            name: "WebCodex Workbench",
+            description: "Project files and references, personal Goals, and explicitly routed durable work with authorized progress and actions.",
         }),
         tools: &["open_webcodex_workbench"],
-        tool_title: Some("Projects & Resources"),
+        tool_title: Some("WebCodex"),
         tool_entrypoints: &["global"],
         read_display_modes: &["fullscreen", "inline"],
         ..BundledMcpApp::template(MCP_WORKBENCH_UI_RESOURCE_URI, MCP_WORKBENCH_APP_HTML)

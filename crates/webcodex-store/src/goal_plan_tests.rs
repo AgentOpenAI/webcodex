@@ -972,3 +972,402 @@ fn revise_goal_plan_reads_pin_current_plan_and_history_to_one_snapshot() {
     handle.join().unwrap();
     assert_eq!(db.read_goal(&owner, &id).unwrap().summary.revision, 17);
 }
+
+#[test]
+fn goal_completion_conditions_edit_preserves_progress_replay_and_restart() {
+    let (temp, db, owner) = fixture();
+    let id = db
+        .create_goal_at(&owner, input("conditions-create"), T0)
+        .unwrap()
+        .goal
+        .summary
+        .goal_id;
+    let prior = db
+        .checkpoint_goal_at(
+            &owner,
+            &id,
+            1,
+            checkpoint(&["inspect"], Some("implement"), "Keep this recovery point"),
+            "conditions-checkpoint",
+            T0 + 1,
+        )
+        .unwrap()
+        .goal;
+    let patch = GoalPatch {
+        completion_conditions: Some(vec!["  Revised acceptance  ".into(), "验证通过".into()]),
+        ..Default::default()
+    };
+    let edited = db
+        .update_goal_at(&owner, &id, 2, patch.clone(), "conditions-edit", T0 + 2)
+        .unwrap();
+    assert!(edited.state_changed);
+    assert_eq!(edited.goal.summary.revision, 3);
+    assert_eq!(edited.goal.summary.updated_at_unix_ms, T0 + 2);
+    assert_eq!(
+        edited.goal.plan.completion_conditions,
+        ["Revised acceptance", "验证通过"]
+    );
+    assert_eq!(edited.goal.plan.steps, prior.plan.steps);
+    assert_eq!(
+        edited.goal.plan.progress_summary,
+        prior.plan.progress_summary
+    );
+    assert_eq!(
+        edited.goal.plan.checkpoint_at_unix_ms,
+        prior.plan.checkpoint_at_unix_ms
+    );
+    let replay = db
+        .update_goal_at(&owner, &id, 2, patch.clone(), "conditions-edit", T0 + 3)
+        .unwrap();
+    assert!(replay.replayed);
+    assert!(!replay.state_changed);
+    assert_eq!(replay.goal, edited.goal);
+    let changed = GoalPatch {
+        completion_conditions: Some(vec!["Different".into()]),
+        ..Default::default()
+    };
+    assert_eq!(
+        db.update_goal_at(&owner, &id, 2, changed.clone(), "conditions-edit", T0 + 3)
+            .unwrap_err()
+            .code(),
+        "goal_idempotency_conflict"
+    );
+    assert_eq!(
+        db.update_goal_at(&owner, &id, 2, changed, "conditions-stale", T0 + 3)
+            .unwrap_err()
+            .code(),
+        "goal_revision_changed"
+    );
+    assert_eq!(db.read_goal(&owner, &id).unwrap(), edited.goal);
+    drop(db);
+    let db = Database::open(&temp.path().join("goal-plan.db")).unwrap();
+    assert_eq!(db.read_goal(&owner, &id).unwrap(), edited.goal);
+    assert!(
+        db.update_goal_at(&owner, &id, 2, patch, "conditions-edit", T0 + 4)
+            .unwrap()
+            .replayed
+    );
+    let omitted = db
+        .update_goal_at(
+            &owner,
+            &id,
+            3,
+            GoalPatch {
+                title: Some("Renamed".into()),
+                ..Default::default()
+            },
+            "conditions-omitted",
+            T0 + 5,
+        )
+        .unwrap();
+    assert_eq!(omitted.goal.plan, edited.goal.plan);
+    let same = db
+        .update_goal_at(
+            &owner,
+            &id,
+            4,
+            GoalPatch {
+                completion_conditions: Some(vec!["Revised acceptance".into(), "验证通过".into()]),
+                ..Default::default()
+            },
+            "conditions-same-new-key",
+            T0 + 6,
+        )
+        .unwrap();
+    assert!(!same.state_changed);
+    assert!(!same.replayed);
+    assert_eq!(same.goal, omitted.goal);
+    let cleared = db
+        .update_goal_at(
+            &owner,
+            &id,
+            4,
+            GoalPatch {
+                completion_conditions: Some(vec![]),
+                ..Default::default()
+            },
+            "conditions-clear",
+            T0 + 7,
+        )
+        .unwrap();
+    assert!(cleared.goal.plan.completion_conditions.is_empty());
+    assert_eq!(cleared.goal.summary.revision, 5);
+    assert_eq!(cleared.goal.plan.steps, prior.plan.steps);
+    assert_eq!(
+        cleared.goal.plan.progress_summary,
+        prior.plan.progress_summary
+    );
+}
+
+#[test]
+fn goal_completion_conditions_edit_has_creation_bounds_and_atomic_failure() {
+    let (_temp, db, owner) = fixture();
+    let goal = db
+        .create_goal_at(&owner, input("conditions-bounds-create"), T0)
+        .unwrap()
+        .goal;
+    for (i, conditions) in [
+        vec!["x".into(); MAX_GOAL_COMPLETION_CONDITIONS + 1],
+        vec![" ".into()],
+        vec![String::new()],
+        vec!["x".repeat(MAX_GOAL_CONDITION_BYTES + 1)],
+        vec!["界".repeat(MAX_GOAL_CONDITION_BYTES / 3 + 1)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut create = input(&format!("conditions-invalid-{i}"));
+        create.completion_conditions = conditions.clone();
+        let create_code = db.create_goal_at(&owner, create, T0 + 1).unwrap_err();
+        let error = db
+            .update_goal_at(
+                &owner,
+                &goal.summary.goal_id,
+                1,
+                GoalPatch {
+                    title: Some("Must not apply".into()),
+                    completion_conditions: Some(conditions),
+                    ..Default::default()
+                },
+                &format!("conditions-invalid-edit-{i}"),
+                T0 + 1,
+            )
+            .unwrap_err();
+        assert_eq!(error.code(), create_code.code());
+        assert_eq!(db.read_goal(&owner, &goal.summary.goal_id).unwrap(), goal);
+    }
+    let conditions = vec!["x".repeat(MAX_GOAL_CONDITION_BYTES); MAX_GOAL_COMPLETION_CONDITIONS];
+    let accepted = db
+        .update_goal_at(
+            &owner,
+            &goal.summary.goal_id,
+            1,
+            GoalPatch {
+                completion_conditions: Some(conditions.clone()),
+                ..Default::default()
+            },
+            "conditions-max",
+            T0 + 2,
+        )
+        .unwrap();
+    assert_eq!(accepted.goal.plan.completion_conditions, conditions);
+    // Foreign-owner edits retain existence hiding and do not mutate the owner record.
+    let mut foreign = owner.clone();
+    foreign.digest = format!("{COMMUNICATION_PRINCIPAL_DIGEST_PREFIX}{}", "b".repeat(64));
+    assert_eq!(
+        db.update_goal_at(
+            &foreign,
+            &goal.summary.goal_id,
+            2,
+            GoalPatch {
+                completion_conditions: Some(vec![]),
+                ..Default::default()
+            },
+            "conditions-foreign",
+            T0 + 3
+        )
+        .unwrap_err()
+        .code(),
+        "goal_not_found"
+    );
+    assert_eq!(
+        db.read_goal(&owner, &goal.summary.goal_id).unwrap(),
+        accepted.goal
+    );
+}
+
+#[test]
+fn goal_completion_conditions_terminal_immutability_and_historical_replay() {
+    let (_temp, db, owner) = fixture();
+    for lifecycle in [GoalLifecycle::Completed, GoalLifecycle::Cancelled] {
+        let mut create = input(&format!("conditions-terminal-{lifecycle:?}"));
+        create.steps.clear();
+        let goal = db.create_goal_at(&owner, create, T0).unwrap().goal;
+        let patch = GoalPatch {
+            completion_conditions: Some(vec!["Final intent".into()]),
+            ..Default::default()
+        };
+        db.update_goal_at(
+            &owner,
+            &goal.summary.goal_id,
+            1,
+            patch.clone(),
+            &format!("conditions-before-{lifecycle:?}"),
+            T0 + 1,
+        )
+        .unwrap();
+        let terminal = db
+            .update_goal_at(
+                &owner,
+                &goal.summary.goal_id,
+                2,
+                GoalPatch {
+                    lifecycle: Some(lifecycle),
+                    ..Default::default()
+                },
+                &format!("conditions-finish-{lifecycle:?}"),
+                T0 + 2,
+            )
+            .unwrap()
+            .goal;
+        assert_eq!(
+            db.update_goal_at(
+                &owner,
+                &goal.summary.goal_id,
+                3,
+                GoalPatch {
+                    completion_conditions: Some(vec![]),
+                    ..Default::default()
+                },
+                &format!("conditions-after-{lifecycle:?}"),
+                T0 + 3
+            )
+            .unwrap_err()
+            .code(),
+            "goal_terminal"
+        );
+        let replay = db
+            .update_goal_at(
+                &owner,
+                &goal.summary.goal_id,
+                1,
+                patch,
+                &format!("conditions-before-{lifecycle:?}"),
+                T0 + 3,
+            )
+            .unwrap();
+        assert!(replay.replayed);
+        assert_eq!(replay.goal, terminal);
+    }
+}
+
+#[test]
+fn goal_completion_conditions_omission_keeps_pre_extension_replay_hash() {
+    use super::store_primitives::digest_json;
+    let (_temp, db, owner) = fixture();
+    let goal = db
+        .create_goal_at(&owner, input("conditions-old-create"), T0)
+        .unwrap()
+        .goal;
+    let patch = GoalPatch {
+        title: Some("Rename".into()),
+        ..Default::default()
+    };
+    db.update_goal_at(
+        &owner,
+        &goal.summary.goal_id,
+        1,
+        patch.clone(),
+        "conditions-old-update",
+        T0 + 1,
+    )
+    .unwrap();
+    let old_hash = digest_json("webcodex.goal.request.v2", &serde_json::json!({
+        "goal_id": goal.summary.goal_id, "expected_revision": 1, "title": "Rename",
+        "objective": null, "controller_agent_id": null, "lifecycle": null, "terminal_reason": null
+    })).unwrap();
+    // Replace the hash with the exact format produced before completion-condition edits existed.
+    db.lock_connection(crate::StoreDomain::Goal).execute(
+        "UPDATE wc_goal_idempotency SET request_hash = ?1 WHERE goal_id = ?2 AND operation = 'update_goal'",
+        params![old_hash, goal.summary.goal_id]).unwrap();
+    assert!(
+        db.update_goal_at(
+            &owner,
+            &goal.summary.goal_id,
+            1,
+            patch,
+            "conditions-old-update",
+            T0 + 2
+        )
+        .unwrap()
+        .replayed
+    );
+}
+
+#[test]
+fn completion_conditions_and_plan_revision_preserve_each_others_history_and_progress() {
+    let (_temp, db, owner) = fixture();
+    let created = db
+        .create_goal_at(&owner, input("cross-operation"), T0)
+        .unwrap()
+        .goal;
+    let id = &created.summary.goal_id;
+    let checkpointed = db
+        .checkpoint_goal_at(
+            &owner,
+            id,
+            1,
+            checkpoint(&["inspect"], Some("implement"), "Inspected"),
+            "cross-checkpoint",
+            T0 + 1,
+        )
+        .unwrap()
+        .goal;
+    let conditions = vec!["Review and validation required".to_string()];
+    let edited = db
+        .update_goal_at(
+            &owner,
+            id,
+            2,
+            GoalPatch {
+                completion_conditions: Some(conditions.clone()),
+                ..Default::default()
+            },
+            "cross-conditions",
+            T0 + 2,
+        )
+        .unwrap()
+        .goal;
+    assert_eq!(edited.plan.steps, checkpointed.plan.steps);
+    let revised = db
+        .revise_goal_plan_at(
+            &owner,
+            id,
+            3,
+            replacement(
+                &[
+                    ("inspect", "inspect"),
+                    ("implement", "Implement safely"),
+                    ("new", "New step"),
+                ],
+                "Revise unfinished work",
+            ),
+            "cross-revision",
+            T0 + 3,
+        )
+        .unwrap()
+        .goal;
+    assert_eq!(revised.plan.completion_conditions, conditions);
+    assert_eq!(revised.plan.steps[0], checkpointed.plan.steps[0]);
+    assert_eq!(revised.plan_history.total_count, 1);
+    assert_eq!(revised.plan_history.revisions[0].plan, edited.plan);
+    assert_eq!(revised.plan_history.revisions[0].revision, 3);
+    let after = db
+        .update_goal_at(
+            &owner,
+            id,
+            4,
+            GoalPatch {
+                completion_conditions: Some(vec!["Final validation".to_string()]),
+                ..Default::default()
+            },
+            "cross-after-revision",
+            T0 + 4,
+        )
+        .unwrap()
+        .goal;
+    assert_eq!(after.plan_history, revised.plan_history);
+    assert_eq!(after.plan.steps, revised.plan.steps);
+    assert_eq!(after.plan.completion_conditions, ["Final validation"]);
+    assert_eq!(after.summary.revision, 5);
+    assert!(db
+        .revise_goal_plan_at(
+            &owner,
+            id,
+            3,
+            replacement(&[("inspect", "inspect")], "Stale revision"),
+            "cross-stale",
+            T0 + 5,
+        )
+        .is_err());
+}

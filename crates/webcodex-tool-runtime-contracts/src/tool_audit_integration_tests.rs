@@ -449,3 +449,21 @@ fn revise_goal_plan_audit_retains_identity_and_counts_without_plan_reason_or_key
         assert!(!result.to_string().contains(private));
     }
 }
+
+#[test]
+fn goal_completion_conditions_edit_does_not_leak_intent_into_audit() {
+    let call = ToolCall::from_tool_name(
+        "update_goal",
+        json!({
+            "goal_id": "wc_goal_AAAAAAAAAAAAAAAA", "expected_revision": 2,
+            "completion_conditions": ["PRIVATE_COMPLETION_CONDITION"],
+            "idempotency_key": "PRIVATE_GOAL_EDIT_KEY"
+        }),
+    )
+    .unwrap();
+    let audit = call.session_log_arguments();
+    assert_eq!(audit["goal_id"], "wc_goal_AAAAAAAAAAAAAAAA");
+    assert_eq!(audit["expected_revision"], 2);
+    assert!(!audit.to_string().contains("PRIVATE_COMPLETION_CONDITION"));
+    assert!(!audit.to_string().contains("PRIVATE_GOAL_EDIT_KEY"));
+}

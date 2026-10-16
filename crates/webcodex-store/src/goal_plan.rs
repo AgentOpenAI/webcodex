@@ -129,7 +129,9 @@ impl GoalCheckpoint {
         }
         if let Some(id) = self.current_step_id.as_deref() {
             if !valid_step_id(id) || ids.contains(id) {
-                return Err(checkpoint_error("current_step_id must be valid and cannot also be completed in the same checkpoint"));
+                return Err(checkpoint_error(
+                    "current_step_id must be valid and cannot also be completed in the same checkpoint",
+                ));
             }
         }
         self.summary = self.summary.trim().to_string();
@@ -149,10 +151,7 @@ impl GoalPlan {
         now: i64,
     ) -> Result<Self, GoalStoreError> {
         let plan = Self {
-            completion_conditions: conditions
-                .into_iter()
-                .map(|value| value.trim().to_string())
-                .collect(),
+            completion_conditions: normalize_completion_conditions(conditions)?,
             steps: steps
                 .into_iter()
                 .map(|step| GoalStep {
@@ -323,21 +322,12 @@ impl GoalPlan {
         created_at: i64,
         updated_at: i64,
     ) -> Result<(), GoalStoreError> {
-        if self.steps.len() > MAX_GOAL_STEPS
-            || self.completion_conditions.len() > MAX_GOAL_COMPLETION_CONDITIONS
-        {
+        if self.steps.len() > MAX_GOAL_STEPS {
             return Err(plan_error(
                 "Goal plan exceeds step or completion-condition bounds",
             ));
         }
-        for condition in &self.completion_conditions {
-            if condition.is_empty()
-                || condition.len() > MAX_GOAL_CONDITION_BYTES
-                || condition.trim() != condition
-            {
-                return Err(plan_error("Invalid bounded completion condition"));
-            }
-        }
+        validate_completion_conditions(&self.completion_conditions)?;
         let mut ids = BTreeSet::new();
         let mut in_progress = 0;
         for step in &self.steps {
@@ -383,4 +373,31 @@ impl GoalPlan {
         }
         Ok(())
     }
+}
+
+// Creation and revision-fenced edits share normalization and UTF-8 byte bounds.
+pub(super) fn normalize_completion_conditions(
+    conditions: Vec<String>,
+) -> Result<Vec<String>, GoalStoreError> {
+    let conditions: Vec<_> = conditions
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .collect();
+    validate_completion_conditions(&conditions)?;
+    Ok(conditions)
+}
+
+fn validate_completion_conditions(conditions: &[String]) -> Result<(), GoalStoreError> {
+    if conditions.len() > MAX_GOAL_COMPLETION_CONDITIONS {
+        return Err(plan_error("Goal plan exceeds completion-condition bounds"));
+    }
+    for condition in conditions {
+        if condition.is_empty()
+            || condition.len() > MAX_GOAL_CONDITION_BYTES
+            || condition.trim() != condition
+        {
+            return Err(plan_error("Invalid bounded completion condition"));
+        }
+    }
+    Ok(())
 }

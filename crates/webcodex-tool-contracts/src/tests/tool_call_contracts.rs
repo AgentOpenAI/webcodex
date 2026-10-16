@@ -2556,3 +2556,37 @@ fn external_observation_contract_uses_explicit_identities_and_no_raw_payload() {
         json!(["source_sequence_unavailable"])
     );
 }
+
+#[test]
+fn update_goal_completion_conditions_are_optional_and_bounded_in_schema() {
+    let base = json!({"goal_id":"wc_goal_AAAAAAAAAAAAAAAA","expected_revision":1,"title":"New title","idempotency_key":"edit"});
+    assert!(matches!(
+        ToolCall::from_tool_name("update_goal", base.clone()).unwrap(),
+        ToolCall::UpdateGoal {
+            completion_conditions: None,
+            ..
+        }
+    ));
+    for conditions in [json!([]), json!(["Explicit acceptance"])] {
+        let mut args = base.clone();
+        args["completion_conditions"] = conditions.clone();
+        let call = ToolCall::from_tool_name("update_goal", args).unwrap();
+        match call {
+            ToolCall::UpdateGoal {
+                completion_conditions: Some(value),
+                ..
+            } => assert_eq!(json!(value), conditions),
+            _ => panic!("lost explicit conditions"),
+        }
+    }
+    let schema = input_schema_for_tool("update_goal");
+    assert_eq!(schema["properties"]["completion_conditions"]["maxItems"], 8);
+    assert_eq!(
+        schema["properties"]["completion_conditions"]["items"]["maxLength"],
+        512
+    );
+    assert!(!schema["required"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("completion_conditions")));
+}

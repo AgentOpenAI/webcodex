@@ -337,7 +337,7 @@ pub(super) const DEFINITIONS: &[ToolDefinition] = &[
                 false,
                 super::ToolSessionEvidencePolicy::NONE,
             ),
-            "Update bounded Goal metadata, explicitly replace its exact independently authorized durable controller Agent, or transition active to completed/cancelled using an exact revision and idempotency key. Omitted controller preserves the current routing identity; terminal Goal state is immutable. Controller routing grants no execution authority and no execution domain is inferred or mutated. Complete every plan step with checkpoint_goal and freshly verify/review before explicitly completing a Goal; the Server cannot judge natural-language completion conditions.",
+            "Update bounded Goal metadata or completion_conditions, explicitly replace its exact independently authorized durable controller Agent, or transition active to completed/cancelled using an exact revision and idempotency key. Omitted completion_conditions preserves the current intent; an empty list clears it. Conditions use the creation bounds and never change steps or recorded progress. Omitted controller preserves the current routing identity; terminal Goal state is immutable. Controller routing grants no execution authority and no execution domain is inferred or mutated. Complete every plan step with checkpoint_goal and freshly verify/review before explicitly completing a Goal; the Server cannot judge natural-language completion conditions.",
         ),
         COMMUNICATION_MANAGE_SCOPES,
     ),

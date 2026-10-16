@@ -1446,6 +1446,7 @@ impl ToolRuntime {
             title,
             objective,
             None,
+            None,
             lifecycle,
             terminal_reason,
             idempotency_key,
@@ -1460,6 +1461,7 @@ impl ToolRuntime {
         expected_revision: i64,
         title: Option<String>,
         objective: Option<String>,
+        completion_conditions: Option<Vec<String>>,
         controller_agent_id: Option<String>,
         lifecycle: Option<String>,
         terminal_reason: Option<String>,
@@ -1487,6 +1489,7 @@ impl ToolRuntime {
             GoalPatch {
                 title,
                 objective,
+                completion_conditions,
                 controller_agent_id,
                 lifecycle,
                 terminal_reason,

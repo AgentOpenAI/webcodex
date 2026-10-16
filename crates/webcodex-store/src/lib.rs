@@ -66,6 +66,7 @@ mod schema;
 mod server_instance;
 mod window_activity;
 mod window_inventory;
+mod workbench_preferences;
 pub use window_inventory::{WindowInventoryPage, WindowInventoryQuery, WindowInventoryRow};
 
 pub use self::admin_project_lifecycle::{AdminProjectAudit, AdminProjectIdempotencyRecord};
