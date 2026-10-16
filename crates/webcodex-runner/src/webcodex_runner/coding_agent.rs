@@ -225,8 +225,13 @@ pub(crate) struct CodingAgentManager {
     admission: Mutex<()>,
     runs: Mutex<HashMap<String, Arc<RunEntry>>>,
     accepting: AtomicBool,
+    /// Serializes the ephemeral live ACP probe so concurrent Diagnose
+    /// requests cannot multiply provider processes.
+    live_probe_permit: Mutex<()>,
     workers: ActivityTracker,
     worker_threads: BackgroundThreads,
+    #[cfg(test)]
+    probe_test_budget: Mutex<Option<Duration>>,
     #[cfg(test)]
     admission_test_barrier: Mutex<Option<Arc<std::sync::Barrier>>>,
     #[cfg(test)]
@@ -257,6 +262,22 @@ fn project_binding_matches(
     runtime_project_id: &str,
     root: &str,
 ) -> bool {
+    project_binding_matches_with_access(
+        project_registry_dir,
+        client_id,
+        runtime_project_id,
+        root,
+        true,
+    )
+}
+
+fn project_binding_matches_with_access(
+    project_registry_dir: &Path,
+    client_id: &str,
+    runtime_project_id: &str,
+    root: &str,
+    require_writable: bool,
+) -> bool {
     let Ok(requested_root) = canonicalize_existing(Path::new(root)) else {
         return false;
     };
@@ -267,7 +288,7 @@ fn project_binding_matches(
         .into_iter()
         .any(|project| {
             if format!("agent:{client_id}:{}", project.id) != runtime_project_id
-                || !project.allow_patch
+                || (require_writable && !project.allow_patch)
                 || project.disabled
             {
                 return false;
@@ -277,6 +298,20 @@ fn project_binding_matches(
                 .filter(|registered_root| registered_root.is_dir())
                 .is_some_and(|registered_root| paths_equal(&registered_root, &requested_root))
         })
+}
+
+/// Evaluate only the explicitly configured ACP environment sources within
+/// the *running Runner process*. Values and undeclared names never leave this
+/// function, including when the source contains non-Unicode bytes.
+fn declared_env_source_presence(
+    provider: &AcpAgentConfig,
+    mut present: impl FnMut(&str) -> bool,
+) -> BTreeMap<String, bool> {
+    provider
+        .env_from_env
+        .iter()
+        .map(|(destination, source)| (destination.clone(), present(source)))
+        .collect()
 }
 
 fn resolve_environment(
@@ -313,6 +348,20 @@ fn response_error(
     )
 }
 impl CodingAgentManager {
+    /// First-stage, read-only ACP readiness primitive. Lookup is provider-ID
+    /// scoped and snapshots the process environment at call time rather than
+    /// using the configuration process's possibly stale environment. Only
+    /// configured destination keys and presence bits are returned.
+    pub(crate) fn declared_provider_env_presence(
+        &self,
+        provider_id: &str,
+    ) -> Option<BTreeMap<String, bool>> {
+        let entry = self.providers.get(provider_id)?;
+        Some(declared_env_source_presence(&entry.config, |name| {
+            std::env::var_os(name).is_some()
+        }))
+    }
+
     pub(crate) fn new(
         config: &AcpConfig,
         client_id: &str,
@@ -338,8 +387,11 @@ impl CodingAgentManager {
             admission: Mutex::new(()),
             runs: Mutex::new(HashMap::new()),
             accepting: AtomicBool::new(true),
+            live_probe_permit: Mutex::new(()),
             workers: ActivityTracker::default(),
             worker_threads: BackgroundThreads::default(),
+            #[cfg(test)]
+            probe_test_budget: Mutex::new(None),
             #[cfg(test)]
             admission_test_barrier: Mutex::new(None),
             #[cfg(test)]
@@ -379,8 +431,11 @@ impl CodingAgentManager {
             admission: Mutex::new(()),
             runs: Mutex::new(HashMap::new()),
             accepting: AtomicBool::new(true),
+            live_probe_permit: Mutex::new(()),
             workers: ActivityTracker::default(),
             worker_threads: BackgroundThreads::default(),
+            #[cfg(test)]
+            probe_test_budget: Mutex::new(None),
             #[cfg(test)]
             admission_test_barrier: Mutex::new(None),
             #[cfg(test)]
@@ -474,6 +529,63 @@ impl CodingAgentManager {
         }
         match request {
             CodingAgentRequest::Start(request) => self.start(request, project_registry_dir),
+            CodingAgentRequest::Diagnose(request) => {
+                // No ACP process is launched. Even this observation must use
+                // the exact provider generation and authorized Project root.
+                if !self.accepting.load(Ordering::Acquire) {
+                    return response_error(
+                        CodingAgentDispatchState::NotStarted,
+                        "coding_agent_stopping",
+                        "Runner is stopping",
+                        "unavailable",
+                        "wait",
+                    );
+                }
+                let Some(provider) = self.providers.get(&request.provider_id) else {
+                    return response_error(
+                        CodingAgentDispatchState::NotStarted,
+                        "coding_agent_provider_unavailable",
+                        "configured ACP provider is unavailable",
+                        "unavailable",
+                        "reobserve",
+                    );
+                };
+                if provider.instance_id != request.provider_instance_id {
+                    return response_error(
+                        CodingAgentDispatchState::NotStarted,
+                        "stale_coding_agent_provider",
+                        "ACP provider instance was replaced",
+                        "stale_state",
+                        "reobserve",
+                    );
+                }
+                if !project_binding_matches_with_access(
+                    project_registry_dir,
+                    &self.client_id,
+                    &request.runtime_project_id,
+                    &request.project_root,
+                    false,
+                ) {
+                    return response_error(
+                        CodingAgentDispatchState::NotStarted,
+                        "stale_coding_agent_project",
+                        "authorized Project root no longer matches Runner registry",
+                        "stale_state",
+                        "reobserve",
+                    );
+                }
+                let live_acp = request
+                    .include_live_acp
+                    .then(|| self.run_live_acp_probe(&request, provider));
+                CodingAgentResponse::success(CodingAgentResponsePayload::Diagnose {
+                    provider_id: request.provider_id.clone(),
+                    provider_instance_id: provider.instance_id.clone(),
+                    env_presence: self
+                        .declared_provider_env_presence(&request.provider_id)
+                        .expect("selected configured provider was checked above"),
+                    live_acp,
+                })
+            }
             CodingAgentRequest::Observe(request) => {
                 let entry = self.runs.lock().unwrap().get(&request.run_id).cloned();
                 match entry {
@@ -748,6 +860,7 @@ impl CodingAgentManager {
     }
 }
 
+mod diagnose;
 mod lifecycle;
 mod protocol;
 mod run;
