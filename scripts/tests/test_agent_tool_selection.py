@@ -25,7 +25,14 @@ class ToolSelectionTests(unittest.TestCase):
 
     def test_selection_cases_are_separate_and_do_not_prescribe_tool_lanes(self) -> None:
         cases = [c for c in self.manifest["cases"] if c.get("experiment") == "tool_selection"]
-        self.assertEqual(len(cases), 5)
+        self.assertEqual({case["id"] for case in cases}, {
+            "selection_single_read", "selection_batch_read",
+            "selection_cross_tool_review", "selection_compound_source_context",
+            "selection_failed_test_recovery", "selection_session_recovery",
+        })
+        self.assertEqual(len(benchmark.DEFAULT_SELECTION_CASES), 4)
+        self.assertTrue(set(benchmark.DEFAULT_SELECTION_CASES).issubset(
+            {case["id"] for case in cases}))
         for case in cases:
             self.assertNotIn("code_mode_surface", case)
         invalid = copy.deepcopy(self.manifest)

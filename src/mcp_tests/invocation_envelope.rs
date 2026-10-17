@@ -76,6 +76,47 @@ fn invocation_envelope_missing_fields_default_but_explicit_null_is_invalid() {
 }
 
 #[test]
+fn invocation_envelope_supported_field_feedback_preserves_target_permissions_and_privacy() {
+    let mut arguments = json!({
+        "project": "private-project-fixture",
+        "_wc": {"record": "private-record-fixture"}
+    });
+    let invocation = parse_mcp_invocation_envelope("cargo_test", &mut arguments, true).unwrap();
+    assert_eq!(
+        invocation.recording_session_selector.as_deref(),
+        Some("private-record-fixture")
+    );
+    assert_eq!(arguments, json!({"project": "private-project-fixture"}));
+
+    let mut arguments = json!({
+        "_wc": {"record": "private-record-fixture", "ack_ref": "private-token-fixture"}
+    });
+    assert_eq!(
+        parse_mcp_invocation_envelope("sync_goal_plan", &mut arguments, true).unwrap_err(),
+        "unsupported _wc field 'ack_ref' for tool 'sync_goal_plan'; supported _wc fields: none"
+    );
+}
+
+#[test]
+fn invocation_envelope_unknown_field_name_is_bounded_and_private() {
+    // Unknown JSON keys are caller-supplied, not vetted names from our schema.
+    // Avoid using the error channel to reflect arbitrarily long/private keys.
+    for field in [
+        "private-token:".to_owned() + &"s".repeat(4096),
+        "Bearer secret with spaces".to_owned(),
+    ] {
+        let mut arguments = json!({"_wc": {field.clone(): true}});
+        let err = parse_mcp_invocation_envelope("cargo_test", &mut arguments, true).unwrap_err();
+        assert!(err.len() < 350, "unbounded error: {} bytes", err.len());
+        assert!(!err.contains(&field));
+        assert!(err.contains("supported _wc fields: record, ack, ack_ref"));
+    }
+    let mut normal_typo = json!({"_wc": {"compactExecution": true}});
+    let err = parse_mcp_invocation_envelope("cargo_test", &mut normal_typo, true).unwrap_err();
+    assert!(err.contains("compactExecution"));
+}
+
+#[test]
 fn invocation_envelope_rejects_malformed_fields_with_canonical_paths() {
     for (envelope, expected) in [
         (
@@ -251,7 +292,7 @@ fn invocation_envelope_error_precedence_and_control_privacy_stay_stable() {
         "resolve": null, "reply": null, "context": null
     });
     for (field, expected) in [
-        ("unsupported", "unsupported _wc field 'unsupported' for tool 'call_runtime_tool'"),
+        ("unsupported", "unsupported _wc field 'unsupported' for tool 'call_runtime_tool'; supported _wc fields: record, ack, ack_ref, resolve, context, compact_execution, reply, control"),
         ("control", "_wc.control requires closed before/communication/after_success objects with bounded canonical operations"),
         ("compact_execution", "_wc.compact_execution must be a boolean"),
         ("record", "field '_wc.record' must be a non-empty string"),

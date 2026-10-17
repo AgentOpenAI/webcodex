@@ -374,6 +374,61 @@ class AgentLoopReportTests(unittest.TestCase):
         arguments.update(kwargs)
         return report.summarize(**arguments)  # type: ignore[arg-type]
 
+    def test_selection_contracts_keep_correctness_and_audit_metadata_separate(self) -> None:
+        from scripts import agent_loop_benchmark as benchmark
+
+        manifest = report.load_case_manifest(report.DEFAULT_CASE_MANIFEST)
+        for case_id in benchmark.DEFAULT_SELECTION_CASES:
+            # Synthetic persisted Audit fixtures exercise report/gate contracts,
+            # not actual model choice or independent answer verification.
+            for shape, tools in (
+                ("compound", ("search_file_context",)),
+                ("separate", ("search_project_texts", "read_files")),
+                ("missing_metadata", ("search_file_context",)),
+            ):
+                session = f"wc_sess_{case_id}_{shape}"
+                for index, tool in enumerate(tools):
+                    self.insert_event(
+                        f"{session}_{index}", session=session, tool=tool,
+                        include_telemetry=shape != "missing_metadata",
+                        started=100 + index * 30, handed=120 + index * 30,
+                    )
+                for verdict in ("pass", "fail", None):
+                    with self.subTest(case_id=case_id, shape=shape, verdict=verdict):
+                        annotation = self.write_annotation(
+                            "selection.json", case_id=case_id,
+                            variant=report.TOOL_SELECTION_VARIANT,
+                            surface=report.TOOL_SELECTION_VARIANT,
+                            correctness=None if verdict is None else {
+                                "task_verdict": verdict, "validation_verdict": "not_required",
+                            },
+                        )
+                        summary = self.summarize(
+                            workflow_session_id=session,
+                            case_manifest=report.DEFAULT_CASE_MANIFEST, case_id=case_id,
+                            variant=report.TOOL_SELECTION_VARIANT,
+                            surface=report.TOOL_SELECTION_VARIANT,
+                            base_revision="a" * 40, run_annotation=annotation,
+                        )
+                        sample = {
+                            "case_id": case_id, "variant": report.TOOL_SELECTION_VARIANT,
+                            "surface": report.TOOL_SELECTION_VARIANT,
+                            # Deliberately optimistic status must not mask missing evidence.
+                            "status": "pass", "summary": summary,
+                            "fixture_oracle": {"available": True, "passed": True},
+                        }
+                        result = {"experiment": "tool_selection", "cases": [
+                            {"case_id": case_id, "samples": [sample]},
+                        ]}
+                        self.assertEqual(
+                            benchmark._strict_passed(result, [case_id], 1, manifest),
+                            verdict == "pass" and shape != "missing_metadata",
+                        )
+                        if verdict is None:
+                            self.assertNotEqual(summary["correctness"]["task_verdict"], "pass")
+                        if shape == "missing_metadata":
+                            self.assertIsNone(summary["canonical_calls"]["total"])
+
     def test_complete_summary_reads_persisted_native_batch_evidence(self) -> None:
         self.insert_event("native-batch", schema_version=13)
         with closing(sqlite3.connect(self.audit_db)) as connection, connection:
@@ -1345,7 +1400,7 @@ class AgentLoopReportTests(unittest.TestCase):
         serialized_once = report._stable_json(manifest)
         serialized_twice = report._stable_json(json.loads(serialized_once))
         self.assertEqual(serialized_once, serialized_twice)
-        self.assertEqual(len(manifest["cases"]), 22)
+        self.assertEqual(len(manifest["cases"]), 23)
         typed_cases = [case for case in manifest["cases"] if "code_mode_surface" in case]
         self.assertEqual(len(typed_cases), 17)
         self.assertEqual(

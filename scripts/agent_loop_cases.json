@@ -117,7 +117,7 @@
       "id": "long_validation_handoff",
       "title": "Long validation and same-execution Job handoff",
       "target": "webcodex_repository",
-      "prompt": "Do not modify files. Start cargo test --lib with sync_wait_secs=1 and a sufficient total timeout. If it hands off, preserve that exact Job identity; while it runs, independently inspect the timing terminology in docs/architecture/tool-composition-research.md, then observe the same Job to terminal completion. Do not redispatch cargo test. If the validation finishes synchronously before handoff, report that this run does not satisfy the handoff case instead of fabricating one.",
+      "prompt": "Do not modify files. Start cargo test --lib with a sufficient total timeout using the published validation options; let the Server control synchronous handoff timing. If it hands off, preserve that exact Job identity; while it runs, independently inspect the timing terminology in docs/architecture/tool-composition-research.md, then observe the same Job to terminal completion. Do not redispatch cargo test. If the validation finishes synchronously before handoff, report that this run does not satisfy the handoff case instead of fabricating one.",
       "correctness": {
         "workspace_must_remain_clean": true,
         "same_execution_must_be_preserved": true,
@@ -127,7 +127,6 @@
       "validation": {
         "required": true,
         "command": "cargo test --lib",
-        "sync_wait_secs": 1,
         "expected_terminal_result": "success"
       },
       "code_mode_surface": "validation"
@@ -516,6 +515,52 @@
       "validation": {
         "required": false,
         "expectation": "Reviewer verifies answer against the exact tested revision and independent Git status; no prescribed tool sequence."
+      },
+      "target": "webcodex_repository",
+      "experiment": "tool_selection"
+    },
+    {
+      "id": "selection_compound_source_context",
+      "title": "Choose tools for bounded source context",
+      "prompt": "Locate the implementation that turns project text search matches into bounded source-context reads. Explain from the current source whether overlapping matches necessarily repeat source content, how read limits and byte-budget fallback qualify coalescing, and what happens when there are no matches. Cite the implementation and relevant regression tests. Use whichever admitted tools provide sufficient evidence; stop when the returned context is sufficient. Do not modify files.",
+      "correctness": {
+        "workspace_must_remain_clean": true,
+        "required_observations": [
+          "match-derived context reads have a bounded global read limit shared across independent queries",
+          "overlapping ranges can coalesce and successfully materialized source content is returned once; byte-budget fallback may retain original members",
+          "planned read_request_count and actual coalesced_read_count are distinct; one physical read is not guaranteed for every query",
+          "no matches returns no source reads and read_request_count zero",
+          "answer cites current implementation and relevant regression tests at the tested revision"
+        ],
+        "fixture_oracle": {
+          "files": {
+            "src/tool_runtime/search_and_read.rs": {
+              "required_text": [
+                "let items = fair_match_read_items",
+                "if items.is_empty() {",
+                "\"reads\": []",
+                "\"read_request_count\": 0",
+                "read_files_coalesced_resolved",
+                "\"coalesced_read_count\": coalesced_reads",
+                ".clamp(1, MAX_READS)",
+                "Keep original members for canonical byte-ceiling fallback"
+              ]
+            },
+            "src/tool_runtime/tests/search_and_read.rs": {
+              "required_text": [
+                "async fn search_and_read_returns_one_source_block_for_overlapping_matches",
+                "compound output must not re-expand overlapping member ranges",
+                "async fn search_and_read_no_matches_does_not_dispatch_a_read",
+                "assert_eq!(result.output[\"read_request_count\"], 0);",
+                "async fn search_and_read_byte_ceiling_fallback_keeps_original_member_continuation"
+              ]
+            }
+          }
+        }
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent answer review against the exact tested implementation and regression tests, including budget/fallback qualifications and zero-match behavior; unchanged workspace. The source oracle checks fixture eligibility only, not answer correctness. No prescribed tool sequence or redundant follow-up read when returned context is sufficient."
       },
       "target": "webcodex_repository",
       "experiment": "tool_selection"

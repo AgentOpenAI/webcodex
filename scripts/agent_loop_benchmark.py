@@ -36,7 +36,12 @@ except ModuleNotFoundError:
 
 STATUS_VALUES = frozenset(("pass", "fail", "partial", "unsupported"))
 DEFAULT_CASES = ("readonly_review", "guarded_multi_file_edit", "long_validation_handoff")
-DEFAULT_SELECTION_CASES = ("selection_single_read", "selection_batch_read", "selection_cross_tool_review")
+DEFAULT_SELECTION_CASES = (
+    "selection_single_read",
+    "selection_batch_read",
+    "selection_cross_tool_review",
+    "selection_compound_source_context",
+)
 VARIANTS = ("direct", "code_mode")
 # Selected, already-persisted metadata only. Model turns and raw payloads cannot
 # be reconstructed from Agent Loop summaries.
@@ -828,7 +833,11 @@ def _run_sample(
     ordinal: int,
     base_revision: str,
     case_manifest: Path,
+    host_cell_policy: str | None = None,
 ) -> dict[str, Any]:
+    if host_cell_policy is not None and (variant != "host_code_mode" or
+        host_cell_policy not in ("host_single_call", "host_composition_allowed")):
+        raise BenchmarkError("Host cell policy requires an explicit Host lane")
     label = f"{case['id']}-p{pair_index + 1}-{ordinal + 1}-{variant}"
     workspace = root / "worktrees" / label
     receipt_path = root / "receipts" / f"{label}.json"
@@ -857,6 +866,7 @@ def _run_sample(
             if _workspace_status(workspace):
                 raise BenchmarkError("fresh benchmark worktree is not clean")
         env = dict(os.environ)
+        env.pop("WEBCODEX_BENCH_HOST_CELL_POLICY", None)
         env.update(
             {
                 "WEBCODEX_BENCH_WORKSPACE": str(workspace),
@@ -870,6 +880,8 @@ def _run_sample(
                 "WEBCODEX_BENCH_DRIVER_RESULT": str(receipt_path),
             }
         )
+        if host_cell_policy is not None:
+            env["WEBCODEX_BENCH_HOST_CELL_POLICY"] = host_cell_policy
         if generic:
             env.update({"WEBCODEX_BENCH_TARGET": "generic_agent_disposable_fixture",
                 "WEBCODEX_BENCH_FIXTURE_COORDINATION": str(coordinator.directory),
@@ -904,7 +916,7 @@ def _run_sample(
             }
 
         receipt = _load_driver_receipt(receipt_path)
-        if receipt.get("task_timing") is None:
+        if "task_timing" not in receipt:
             receipt["task_timing"] = {"started_at_ms": started, "ended_at_ms": ended}
         if coordinator is not None:
             coordinator.close()

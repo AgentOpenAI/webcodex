@@ -35,6 +35,41 @@ fn execution_control_input_is_explicit_closed_and_business_args_stay_unchanged()
 }
 
 #[tokio::test]
+async fn execution_control_unsupported_cargo_field_reports_same_target_allowlist_before_dispatch() {
+    let runtime = test_runtime();
+    for gateway in [false, true] {
+        let mut request = params(
+            "cargo_test",
+            json!({"project": "private-project-fixture"}),
+            gateway,
+            true,
+        );
+        request["arguments"]["_wc"]["record"] = json!("private-record-fixture");
+        request["arguments"]["_wc"]["ack_ref"] = json!("private-token-fixture");
+        let McpOutcome::BadRequest(body) =
+            handle_mcp_request(&runtime, rpc("tools/call", Some(json!(1)), request), None).await
+        else {
+            panic!("unsupported field must be rejected before target dispatch");
+        };
+        assert_eq!(body["error"]["code"], -32602);
+        assert_eq!(
+            body["error"]["message"],
+            "unsupported _wc field 'compact_execution' for tool 'cargo_test'; supported _wc fields: record, ack, ack_ref, resolve, context, reply, control"
+        );
+        assert!(body.get("result").is_none());
+        assert!(runtime.runner_registry.list_jobs(None).await.is_empty());
+        let encoded = body.to_string();
+        for private_value in [
+            "private-project-fixture",
+            "private-record-fixture",
+            "private-token-fixture",
+        ] {
+            assert!(!encoded.contains(private_value));
+        }
+    }
+}
+
+#[tokio::test]
 async fn execution_control_schema_exposes_opt_in_and_validates_both_result_views() {
     let McpOutcome::Ok(body) = crate::mcp::tools::handle_list(None, None, true, false, false).await
     else {

@@ -250,7 +250,7 @@ The profiler includes a deterministic case fingerprint so changed case definitio
 cannot silently compare as the same pair.
 
 The controlled-lane corpus contains seventeen cases: eleven coding/inspection cases
-and six general file/command cases. Five additional `tool_selection` cases use
+and six general file/command cases. Six additional `tool_selection` cases use
 task-language prompts without prescribing an execution lane. The controlled
 coding/inspection cases are:
 
@@ -419,7 +419,7 @@ treating one run or one ordering as causal proof.
 
 ## Free tool-selection experiment
 
-The five `selection_*` cases in the same manifest measure task outcomes while
+The six `selection_*` cases in the same manifest measure task outcomes while
 allowing any admitted mix of Direct tools, native batches, Host Code Mode, and
 experimental WebCodex Code Mode. Native batching is an invocation shape, not a
 fourth execution surface. These cases use `experiment=tool_selection` and the
@@ -431,6 +431,9 @@ unchanged.
 - `selection_batch_read`: reconcile two fixture values and preserved sentinels.
 - `selection_cross_tool_review`: inspect Git state and locate the current query
   matching implementation, without prescribing tools or a preferred conclusion.
+- `selection_compound_source_context`: locate match-derived source-context reads,
+  explain overlap coalescing with read/byte-budget qualifications and zero-match
+  behavior, and cite current implementation and tests without prescribing tools.
 - `selection_failed_test_recovery`: observe the deliberately failing isolated
   Rust fixture, repair its implementation, retain its test, and verify success.
 - `selection_session_recovery`: save a decision/progress note, then explicitly
@@ -442,7 +445,25 @@ final passing test independently. A matching final file alone does not prove
 that a model observed the failure, selected useful tools, or recovered a Session.
 Unlike old exact-edit fixtures, a successful file oracle never supplies the free
 selection task verdict: the driver must provide independent answer/workflow
-correctness. Missing correctness leaves a sample partial.
+correctness. A receipt verdict is an external annotation, not automatic proof
+that an answer is true. Retain the actual final answer and a separate check
+against source at the exact tested revision; for repository review also check
+actual Git state. The compound source oracle checks that the fixture contains
+the relevant implementation/tests, not that the model found or explained them.
+Missing correctness leaves a sample partial. Missing canonical Audit metadata
+cannot satisfy strict selection acceptance even when the driver declares pass.
+Tool counts prove neither correctness nor unnecessary reads.
+
+The default selection suite contains the first four cases above. Any admitted
+tool mix is permitted: sufficient context returned by a compound operation needs
+no redundant follow-up read, and separate search/read calls remain valid. The
+compound regression must distinguish planned member counts from coalesced output
+and must not claim every search always produces one physical read. The two
+recovery cases remain explicit opt-ins. This suite is separate from the fixed
+three-task, three-pair [efficiency experiment](agent-efficiency-upgrade.md).
+Stage 2 depends on the generic runtime-evidence acceptance work in
+[PR #1162](https://github.com/yyjeqhc/webcodex/pull/1162); selection annotations do
+not replace that stage's case-specific proofs.
 
 After the manifest is recorded at the tested checkout's exact HEAD, run:
 
@@ -451,7 +472,8 @@ python3 scripts/agent_loop_benchmark.py \
   --experiment tool_selection --repo . --base-revision <40-hex-fixture-base> \
   --driver '<real-host-driver-command>' --samples 3 \
   --case-id selection_single_read --case-id selection_batch_read \
-  --case-id selection_cross_tool_review --output /tmp/tool-selection.json
+  --case-id selection_cross_tool_review --case-id selection_compound_source_context \
+  --output /tmp/tool-selection.json
 ```
 
 The caller-owned driver receives the existing receipt/workspace/prompt variables
