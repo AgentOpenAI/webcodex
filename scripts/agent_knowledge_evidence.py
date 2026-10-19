@@ -304,6 +304,30 @@ def check_answer(answer, fixture):
     return covered == set(expected)
 
 
+def _skill_project_path(output):
+    """Bind current locators or historical captures to the exact fixture folder."""
+    canonical = "skill_path" in output or "project_path" in output
+    if canonical:
+        if "path" in output or output.get("source_scope") != "project":
+            raise trace.EvidenceUnavailable("fixture_binding_mismatch")
+        relative = output.get("skill_path")
+    else:
+        # Persisted pre-citation-contract captures used package-relative path.
+        if output.get("source_scope", "project") != "project":
+            raise trace.EvidenceUnavailable("fixture_binding_mismatch")
+        relative = output.get("path", "SKILL.md")
+    if (not isinstance(relative, str) or not relative or relative != relative.strip()
+            or any(ord(char) < 32 or ord(char) == 127 for char in relative)
+            or "\\" in relative or ":" in relative
+            or any(part in {"", ".", ".."} for part in relative.split("/"))):
+        raise trace.EvidenceUnavailable("fixture_binding_mismatch")
+    # This folder is part of the pinned fixture, not derived from Skill metadata.
+    project_path = SKILL.rsplit("/", 1)[0] + "/" + relative
+    if canonical and output.get("project_path") != project_path:
+        raise trace.EvidenceUnavailable("fixture_binding_mismatch")
+    return project_path
+
+
 def check_calls(calls, fixture, projects, advance=None):
     """Return truthful task/path checks, including observed model failures."""
     current_sources = {item["path"]: item for item in fixture.sources()}
@@ -364,10 +388,10 @@ def check_calls(calls, fixture, projects, advance=None):
             if output.get("name") == "receipt-audit" and isinstance(output.get("skill_id"), str):
                 skill_ids.add(output["skill_id"])
             selected = output.get("skill_id") or args.get("skill_id")
-            if selected in skill_ids:
-                path = ".agents/skills/receipt-audit/" + output.get("path", "SKILL.md")
+            if selected in skill_ids and "text" in output:
+                path = _skill_project_path(output)
                 source = sources.get(path)
-                if source is not None and "text" in output:
+                if source is not None:
                     definition = sources.get(SKILL)
                     if (definition is None or output.get("definition_revision") != definition["source_hash"]
                             or not _source_match(output, source, hash_key="sha256")):

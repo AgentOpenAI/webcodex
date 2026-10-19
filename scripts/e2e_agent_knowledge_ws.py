@@ -83,8 +83,12 @@ class RecordedSample(HostSample):
             else:
                 definition = self.call("load_skill", {"project": self.project_ref, "name": "receipt-audit"}, direct=True)
             self.old_definition = definition
-            self.call("read_skill_file", {"project": self.project_ref, "skill_id": definition["skill_id"],
+            reference = self.call("read_skill_file", {"project": self.project_ref, "skill_id": definition["skill_id"],
                 "path": "reference.md", "expected_definition_revision": definition["definition_revision"]}, direct=True)
+            for output, skill_path in ((definition, "SKILL.md"), (reference, "reference.md")):
+                if (output.get("skill_path") != skill_path or "path" in output
+                        or output.get("project_path") != SKILL.rsplit("/", 1)[0] + "/" + skill_path):
+                    raise AssertionError("Skill read did not return canonical citation locators")
         else:
             self.call("read_files", {"project": self.project_ref,
                 "items": [{"path": path} for path in fixture.required_sources],

@@ -51,8 +51,10 @@ def skill_reads(fixture, stage=0, index=1):
     definition = next(source for source in sources if source["path"] == SKILL)
     calls = [call("list_skills", {}, {"skills": [{"name": "receipt-audit", "skill_id": "skill-one"}]}, index)]
     for offset, source in enumerate(sources):
-        output = dict(source, path=Path(source["path"]).name, skill_id="skill-one",
+        output = dict(source, skill_path=Path(source["path"]).name,
+                      project_path=source["path"], source_scope="project", skill_id="skill-one",
                       definition_revision=definition["source_hash"], sha256=source["source_hash"])
+        output.pop("path")
         output.pop("source_hash")
         tool = "load_skill" if source["path"] == SKILL else "read_skill_file"
         calls.append(call(tool, {"skill_id": "skill-one"}, output, index + offset + 1))
@@ -194,6 +196,61 @@ class KnowledgeSemanticsTests(unittest.TestCase):
         wrong[-1]["output"]["definition_revision"] = before[-1]["output"]["definition_revision"]
         with self.assertRaises(trace.EvidenceUnavailable):
             self.check(fixture, before + wrong, advance)
+
+    def test_skill_current_paths_bind_load_and_reference_to_exact_fixture_folder(self):
+        fixture = self.fixture("knowledge_skill_read")
+        calls = skill_reads(fixture)
+        self.assertEqual([item["tool"] for item in calls[1:]], ["load_skill", "read_skill_file"])
+        self.assertEqual(calls[1]["output"]["skill_path"], "SKILL.md")
+        self.assertEqual(calls[2]["output"]["skill_path"], "reference.md")
+        checks, adoption = self.check(fixture, calls)
+        self.assertTrue(all(checks.values()), checks)
+        self.assertTrue(adoption["skill"])
+
+    def test_skill_rejects_mixed_missing_wrong_scope_and_noncanonical_locators(self):
+        fixture = self.fixture("knowledge_skill_read")
+        mutations = [
+            {"path": "reference.md"},
+            {"source_scope": "runner"},
+            {"source_scope": None},
+            {"project_path": ".agents/skills/other/reference.md"},
+            {"project_path": "reference.md"},
+            {"project_path": ".agents/skills/receipt-audit/../receipt-audit/reference.md"},
+            {"project_path": None},
+            {"skill_path": None},
+        ]
+        for path in ("../reference.md", "./reference.md", "/reference.md", "reference.md/",
+                     "nested//reference.md", "nested/../reference.md", " reference.md",
+                     "reference.md ", "reference\\md", "C:/reference.md", "reference.md\n"):
+            mutations.append({"skill_path": path, "project_path": ".agents/skills/receipt-audit/" + path})
+        for mutation in mutations:
+            calls = skill_reads(fixture)
+            calls[-1]["output"].update(mutation)
+            with self.subTest(mutation=mutation), self.assertRaises(trace.EvidenceUnavailable):
+                self.check(fixture, calls)
+        for missing in ("skill_path", "project_path", "source_scope"):
+            calls = skill_reads(fixture)
+            del calls[-1]["output"][missing]
+            with self.subTest(missing=missing), self.assertRaises(trace.EvidenceUnavailable):
+                self.check(fixture, calls)
+
+    def test_historical_skill_paths_remain_revision_and_hash_bound(self):
+        fixture = self.fixture("knowledge_skill_read")
+        calls = skill_reads(fixture)
+        for item in calls[1:]:
+            output = item["output"]
+            output["path"] = output.pop("skill_path")
+            del output["project_path"]
+            del output["source_scope"]
+        checks, adoption = self.check(fixture, calls)
+        self.assertTrue(all(checks.values()), checks)
+        self.assertTrue(adoption["skill"])
+        for field, value in (("definition_revision", "0" * 64), ("sha256", "0" * 64),
+                             ("path", "../reference.md"), ("source_scope", "runner")):
+            wrong = copy.deepcopy(calls)
+            wrong[-1]["output"][field] = value
+            with self.subTest(field=field), self.assertRaises(trace.EvidenceUnavailable):
+                self.check(fixture, wrong)
 
     def test_source_update_requires_two_stages_and_exact_trigger_hash_time(self):
         fixture = self.fixture("knowledge_source_update")
