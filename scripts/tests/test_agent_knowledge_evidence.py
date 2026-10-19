@@ -419,7 +419,7 @@ class KnowledgeCaptureTests(unittest.TestCase):
             connection.execute("UPDATE action_events SET client_window_key='foreign' WHERE event_id=?", (identity,))
         self.assertFalse(self.verify()["available"])
 
-    def parser_rejection(self):
+    def parser_rejection(self, *, message=evidence._PLUGIN_PROJECT_VALIDATION_ERROR, action="call"):
         self.trace = str(uuid.uuid4())
         self.directory = self.root / self.trace
         self.directory.mkdir(mode=0o700)
@@ -428,10 +428,10 @@ class KnowledgeCaptureTests(unittest.TestCase):
         self.events = []
         self.audit.insert_event(self.trace, tool="plugin_tool", trace_id=self.trace,
             status="failed", success=False, link=False, include_telemetry=False)
-        self.payload("raw_arguments", {"action": "call", "runner": None, "plugin": None,
+        self.payload("raw_arguments", {"action": action, "runner": None, "plugin": None,
             "tool": None, "binding_present": True, "arguments_present": True})
         self.payload("final_response", {"jsonrpc": "2.0", "id": 1, "error": {
-            "code": -32602, "message": evidence._PLUGIN_PROJECT_VALIDATION_ERROR}})
+            "code": -32602, "message": message}})
         for name in ("mcp_tool_dispatch_failed", "mcp_tool_dispatch_finished", "mcp_tool_handler_returned"):
             self.events.append({"server_trace_id": self.trace, "event": name, "tool_name": "plugin_tool",
                 "client_window_key": "hashed-window-a", "protocol_success": False,
@@ -439,6 +439,31 @@ class KnowledgeCaptureTests(unittest.TestCase):
                 "category": "bad_request" if name.endswith("handler_returned") else "invalid_arguments"})
         self.flush()
         return self.trace
+
+    def assert_current_parser_rejection(self, message, action):
+        self.parser_rejection(message=message, action=action)
+        result = self.verify()
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["canonical_call_count"], 2)
+        self.assertEqual(result["adapter_rejection_count"], 1)
+        self.assertEqual(result["resource_adoption"], {"knowledge_plugin": False, "skill": False})
+        original = copy.deepcopy(self.events)
+        for event in ({"event": "tool_runner_request_enqueued"}, {"phase": "effective_arguments"},
+                      {"event": "mcp_tool_handler_returned", "client_window_key": "foreign"}):
+            self.events = original + [dict(event, server_trace_id=self.trace)]
+            self.flush()
+            self.assertFalse(self.verify()["available"])
+        self.events = []
+        self.payload("raw_arguments", {"action": "describe" if action == "call" else "call"})
+        self.payload("final_response", {"error": {"code": -32602, "message": message}})
+        self.events.extend(original[2:]); self.flush()
+        self.assertFalse(self.verify()["available"], "current diagnostic must match its action")
+
+    def test_current_call_project_recovery_is_not_execution_or_source_evidence(self):
+        self.assert_current_parser_rejection(evidence._PLUGIN_CALL_PROJECT_RECOVERY_ERROR, "call")
+
+    def test_current_describe_project_recovery_is_not_execution_or_source_evidence(self):
+        self.assert_current_parser_rejection(evidence._PLUGIN_DESCRIBE_PROJECT_RECOVERY_ERROR, "describe")
 
     def test_captured_parser_rejection_is_not_session_execution_or_source_evidence(self):
         self.parser_rejection()
