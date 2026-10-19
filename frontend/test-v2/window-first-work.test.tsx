@@ -655,7 +655,7 @@ it("keeps collaboration history and draft on the same Window across Runner chang
     }] });
     throw new Error("unexpected path " + path);
   });
-  render(<WindowWorkbench client={client} projects={[source, next]} language="en" surface="windows" onSurfaceChange={vi.fn()} onUnauthorized={vi.fn()} />);
+  render(<WindowWorkbench client={client} projects={[source, next]} language="en" onUnauthorized={vi.fn()} />);
   await screen.findByRole("heading", { name: "WebCodex" });
   // Inventory can render the heading before the initial Window selection settles.
   // Wait for its activity to render before activating the collaboration pane.

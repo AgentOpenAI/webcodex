@@ -1,10 +1,10 @@
 import { CircleDot } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { RuntimeLanguage } from "../../runtime_i18n.js";
 import { translate } from "../../runtime_i18n.js";
 import type { RuntimeV2Client } from "../api/client.js";
 import { SessionExecution } from "../components/SessionExecution.js";
-import { GoalWorkbench, type WorkSurface } from "../components/GoalWorkbench.js";
+import { GoalWorkbench, WorkSurfaceSwitch, type WorkSurface } from "../components/GoalWorkbench.js";
 import { SessionInspector } from "../components/SessionInspector.js";
 import { WorkList } from "../components/WorkList.js";
 import { WindowWorkbench } from "../components/WindowWorkbench.js";
@@ -61,14 +61,18 @@ export function WorkView({
   const project = selected ? projects.find((row) => row.id === selected.projectId) : undefined;
   const git = useProjectGit(client, Boolean(selected && surface === "session"), selected?.projectId || "");
 
+  // Keep one selector mounted when the underlying workbench changes.
+  const withNavigation = (body: ReactNode) => <div className="work-view-shell">
+    <div className="work-view-navigation"><WorkSurfaceSwitch surface={surface} onSurfaceChange={onSurfaceChange} language={language} /></div>
+    <div className="work-view-body">{body}</div>
+  </div>;
+
   if (surface === "goals") {
-    return (
+    return withNavigation(
       <GoalWorkbench
         client={client}
         language={language}
         projects={projects}
-        surface={surface}
-        onSurfaceChange={onSurfaceChange}
         onOpenSession={onOpenSession}
         onOpenAgent={onOpenAgent}
         onOpenWindow={onOpenWindow}
@@ -78,13 +82,11 @@ export function WorkView({
   }
 
   if (surface === "windows") {
-    return (
+    return withNavigation(
       <WindowWorkbench
         client={client}
         language={language}
         projects={projects}
-        surface={surface}
-        onSurfaceChange={onSurfaceChange}
         onUnauthorized={onUnauthorized}
         onOpenSessionRecord={onOpenSessionRecord ? (projectId, sessionId) => {
           const project = projects.find(row => row.id === projectId);
@@ -153,7 +155,7 @@ export function WorkView({
     }
   };
 
-  return (
+  return withNavigation(
     <div className="work-layout">
       <WorkList
         items={items}
@@ -162,8 +164,6 @@ export function WorkView({
         locating={locating}
         language={language}
         inventoryIncomplete={inventoryIncomplete}
-        surface={surface}
-        onSurfaceChange={onSurfaceChange}
         onSearch={setSearch}
         onLocateExact={() => void locateExact()}
         onSelect={open}

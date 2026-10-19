@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../../../../frontend/src/ui/useFlowingSelection";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CircleHelp, Database, FolderLock, Info, Monitor, Network, Settings2 } from "lucide-react";
 import { desktopApi } from "../../lib/desktop-api";
@@ -64,6 +65,8 @@ function SettingsView({
   const { appearance, setAppearance, accent, setAccent } = useAppearance();
   const p = useProduct();
   const c = useConfigurationData();
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, section);
   const [runnerSettings, setRunnerSettings] = useState<RunnerSettings | null>(null);
   const [loadingRunnerSettings, setLoadingRunnerSettings] = useState(true);
   const [runnerSettingsError, setRunnerSettingsError] = useState<DesktopError | null>(null);
@@ -183,7 +186,7 @@ function SettingsView({
     <section className="page-section workspace-page settings-page" aria-labelledby="settings-title" data-webcodex-page="settings">
       <header className="page-heading-row"><h1 id="settings-title">{t("settings.title")}</h1></header>
       <div className="settings-layout">
-      <div className="settings-navigation" role="tablist" aria-label={t("settings.title")} aria-orientation="vertical">
+      <div ref={selectionRef} className="settings-navigation" role="tablist" aria-label={t("settings.title")} aria-orientation="vertical">
         {SECTIONS.map(value => {
           const Icon = SECTION_ICONS[value];
           return <button type="button" role="tab" key={value} id={`settings-tab-${value}`} aria-controls={`desktop-settings-${value}`} aria-selected={section === value} tabIndex={section === value ? 0 : -1} onClick={() => selectSection(value)} onKeyDown={event => {

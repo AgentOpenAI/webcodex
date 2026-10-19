@@ -196,3 +196,12 @@ now transfers that return target through the replacement. The
 [Desktop audit inventory](desktop-soft-surfaces/README.md#mounted-resize-and-theme-audit)
 distinguishes these fixture checks from native Linux smoke and untested OS/error
 permutations.
+
+## Embedded Workbench and flowing selection
+
+The MCP Workbench now follows the current solid-surface visual language with
+compact chrome, contextual Project/Session controls, grouped read diagnostics
+and an expandable explicit-reference tray. Desktop and Runtime local tabs and
+segmented views share its moving selection plate, including variable-size,
+vertical and grid controls. The [Workbench and motion gallery](workbench-flowing-selection/README.md)
+records behavior, reproducible browser evidence and native/Host validation limits.

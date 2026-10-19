@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import {
   Bot,
   CircleDot,
@@ -8,7 +9,7 @@ import {
   Monitor,
   TerminalSquare,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import type { RuntimeLanguage } from "../../runtime_i18n.js";
 import { translate } from "../../runtime_i18n.js";
 import { absoluteTime, relativeTime, shortId } from "../model/format.js";
@@ -31,6 +32,8 @@ export function SessionExecution({ item, location, session, language, onOpenWind
   const progress = groupRecentProgress(session.detail);
   const signals = activitySignals(session.detail, item);
   const [centerTab, setCenterTab] = useState<"workflow" | "collaboration">("workflow");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, centerTab);
 
   useEffect(() => {
     setCenterTab("workflow");
@@ -57,7 +60,7 @@ export function SessionExecution({ item, location, session, language, onOpenWind
         </div>
       </header>
 
-      <div className="session-view-tabs" role="tablist" aria-label={t("Work view")}>
+      <div ref={selectionRef} className="session-view-tabs" role="tablist" aria-label={t("Work view")}>
         <button
           id="workflow-tab"
           role="tab"

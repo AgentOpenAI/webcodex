@@ -30,6 +30,20 @@ function edit(message = "Original edit") {
 }
 
 describe("Session composer submission safety", () => {
+  it("changes the selected message kind immediately while retaining the draft", () => {
+    render(<SessionComposer location={location} session={workspace()} language="en" />);
+    const textbox = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(textbox, { target: { value: "Retained kind-switch draft" } });
+    const note = screen.getByRole("button", { name: "Note", pressed: true });
+    const guidance = screen.getByRole("button", { name: "Guidance", pressed: false });
+    guidance.focus();
+    fireEvent.click(guidance);
+    expect(screen.getByRole("button", { name: "Guidance", pressed: true })).toBe(guidance);
+    expect(note.getAttribute("aria-pressed")).toBe("false");
+    expect(document.activeElement).toBe(guidance);
+    expect(textbox.value).toBe("Retained kind-switch draft");
+    expect(loadDraft(location.projectId, location.sessionId)).toBe("Retained kind-switch draft");
+  });
   it.each([false, true])("blocks repeated Enter and button submissions synchronously (editing=%s)", async (editing) => {
     const pending = deferred<boolean>();
     const mutation = vi.fn(() => pending.promise);

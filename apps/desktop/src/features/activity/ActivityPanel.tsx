@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useFlowingSelection } from "../../../../../frontend/src/ui/useFlowingSelection";
+import { useRef, useEffect, useMemo, useState } from "react";
 import { NativeSelect } from "@mantine/core";
 import { MessageSquare, TerminalSquare, ArrowRight } from "lucide-react";
 import { useLocale } from "../../i18n/locale";
@@ -56,6 +57,8 @@ export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
   const p = useProduct(); const s = useShellText(); const { locale } = useLocale(); const workspace = useWorkspace();
   const [tab, setTab] = useState<Tab>("windows"); const [selectedProject, setProject] = useState(""); const [page, setPage] = useState(0);
   const [selectedSessionFilter, setSessionFilter] = useState<SessionFilter>("all");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, tab);
   const [filterContext, setFilterContext] = useState(workspace.contextKey);
   const authorizationLost = workspace.error && ["authenticationRequired", "permissionDenied"].includes(workspace.errorReason);
   // A new inventory or permission boundary must never render with the previous
@@ -82,7 +85,7 @@ export function ActivityPanel({ activity }: { activity: ActivityEntry[] }) {
   const descriptions: Record<Tab, string> = { windows: p("callHistoryHelp"), sessions: p("sessionHistoryHelp"), system: p("serviceHistoryHelp") };
   return <div className="page-section workspace-page" data-webcodex-page="activity">
     <header className="page-heading-row"><h1>{p("activity")}</h1><button type="button" className="secondary-button" onClick={workspace.refresh} disabled={workspace.busy}>{p("refresh")}</button></header>
-    <div className="workspace-tabs" role="tablist" aria-label={p("activity")}>{TABS.map(value => <button key={value} type="button" role="tab" id={`activity-tab-${value}`} aria-controls={`activity-view-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => {
+    <div ref={selectionRef} className="workspace-tabs" role="tablist" aria-label={p("activity")}>{TABS.map(value => <button key={value} type="button" role="tab" id={`activity-tab-${value}`} aria-controls={`activity-view-${value}`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1} onClick={() => setTab(value)} onKeyDown={event => {
       if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
       event.preventDefault(); const next = event.key === "Home" ? TABS[0] : event.key === "End" ? TABS[TABS.length - 1] : TABS[(TABS.indexOf(value) + (event.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length]; setTab(next); document.getElementById(`activity-tab-${next}`)?.focus();
     }}>{labels[value]}</button>)}</div>

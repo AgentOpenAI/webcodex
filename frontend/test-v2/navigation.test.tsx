@@ -79,6 +79,19 @@ describe("Runtime v2 navigation", () => {
     installFetch();
   });
 
+  it("retains the same selection plate when switching between Goals and Activity", async () => {
+    const { container } = render(<App />);
+    await screen.findByRole("searchbox", { name: "Search Windows" });
+    const plate = container.querySelector(".work-surface-control [data-selection-motion-plate]");
+    expect(plate).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /Goals/ }));
+    await screen.findByRole("searchbox", { name: "Search Goals" });
+    expect(container.querySelector(".work-surface-control [data-selection-motion-plate]")).toBe(plate);
+    fireEvent.click(screen.getByRole("radio", { name: /Activity/ }));
+    await screen.findByRole("searchbox", { name: "Search Windows" });
+    expect(container.querySelector(".work-surface-control [data-selection-motion-plate]")).toBe(plate);
+  });
+
   it("keeps Work / Projects / Runtime as the only primary destinations", async () => {
     render(<App />);
     expect(await screen.findByRole("searchbox", { name: "Search Windows" })).toBeTruthy();

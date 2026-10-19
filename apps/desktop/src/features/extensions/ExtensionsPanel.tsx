@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useFlowingSelection } from "../../../../../frontend/src/ui/useFlowingSelection";
+import { useRef, useState } from "react";
 import { useRunnerCapabilitiesText } from "../../i18n/runner-capabilities";
 import { useConnectionsTools } from "../../i18n/connections-tools";
 import { useInstructionsText } from "../../i18n/instructions";
@@ -20,6 +21,8 @@ export function ExtensionsPanel({ state, onState, initialTab }: { state: Desktop
   const { t } = useLocale(); const p = useProduct(); const c = useConnectionsTools(); const r = useRunnerCapabilitiesText();
   const instructionsText = useInstructionsText();
   const [tab, setTab] = useState<ExtensionTab>(() => extensionPanel(initialTab).id);
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, tab);
   const view = useExtensionsState(state, onState);
   const panel = extensionPanel(tab);
   const { Content, Configuration } = panel;
@@ -34,7 +37,7 @@ export function ExtensionsPanel({ state, onState, initialTab }: { state: Desktop
   return <div className="page-section workspace-page" data-webcodex-page="extensions">
     <header className="page-heading-row"><h1 id="extensions-title">{t("extensions.title")}</h1>{panel.showRefresh && <button className="secondary-button" onClick={view.refresh} disabled={view.disabled || view.loading}>{p("refresh")}</button>}</header>
     <div className="extensions-layout">
-      <div className="extensions-navigation" role="tablist" aria-orientation="vertical" aria-label={t("extensions.title")}>
+      <div ref={selectionRef} className="extensions-navigation" role="tablist" aria-orientation="vertical" aria-label={t("extensions.title")}>
         {EXTENSION_PANELS.map(entry => { const Icon = entry.Icon; return <button type="button" role="tab" key={entry.id} id={`extension-tab-${entry.id}`} aria-controls={`extension-view-${entry.id}`} aria-selected={tab === entry.id} tabIndex={tab === entry.id ? 0 : -1} onClick={() => setTab(entry.id)} onKeyDown={event => {
           const next = extensionTabForKey(entry.id, event.key);
           if (next === null) return;

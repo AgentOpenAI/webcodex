@@ -113,3 +113,14 @@ connections can continue contributing duplicate menu rows until separately
 disconnected. Keep the intended active connection and remove obsolete test
 connections through Host settings when the account owner chooses to do so.
 No live service restart, deployment or connection removal is part of this change.
+
+## Workbench surface and selection follow-up
+
+Workbench v6 uses compact solid surfaces, contextual Project/Session selectors,
+an expandable reference tray and grouped exceptional-state diagnostics. A shared
+first-party selection controller supplies moving project-tab backgrounds while
+preserving original keyboard, bridge, exact-target and submission-recovery
+behavior. The [UI contract and fixture evidence](../ui/workbench-flowing-selection/README.md)
+cover its 260 ms motion, responsive geometry, native fieldset handling and reduced
+motion. Work Result is outside this follow-up; deployment and Host refresh remain
+separate from these local checks.

@@ -7,147 +7,210 @@
 <style>
 :root {
   color-scheme: light dark;
-  font: 14px/1.5 var(--font-sans, ui-sans-serif, system-ui, sans-serif);
-  --border: color-mix(in srgb, CanvasText 13%, transparent);
-  --muted: color-mix(in srgb, CanvasText 62%, transparent);
-  --surface: color-mix(in srgb, Canvas 96%, CanvasText 4%);
-  --accent: light-dark(#2563eb, #8ab4f8);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI Variable", "Segoe UI", ui-sans-serif, sans-serif;
+  --canvas: light-dark(#f2f2f2, #141414);
+  --content: light-dark(#ffffff, #202020);
+  --surface: light-dark(#f7f7f7, #292929);
+  --ink: light-dark(#191919, #f5f5f5);
+  --muted: light-dark(#626262, #b5b5b5);
+  --border: light-dark(#e5e5e5, #383838);
+  --accent: light-dark(#2563eb, #93b4ff);
+  --on-selection: light-dark(#ffffff, #191919);
+  --warning: light-dark(#8a5c1f, #e9bd7f);
+  --selection-motion-fill: var(--ink);
+  --selection-motion-ink: var(--on-selection);
+  --selection-motion-base-ink: var(--ink);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: transparent; }
-body { padding: 2px; color: CanvasText; }
+body { padding: 2px; color: var(--ink); }
 button, input, select, textarea { font: inherit; color: inherit; min-width: 0; max-width: 100%; }
-button, select, input, textarea { border: 1px solid var(--border); border-radius: 8px; background: Canvas; padding: 8px 10px; }
+button, select, input, textarea { border: 1px solid var(--border); border-radius: 8px; background: var(--content); padding: 9px 12px; }
 button { cursor: pointer; }
 button:hover:not(:disabled) { background: var(--surface); }
 button:disabled { opacity: .5; cursor: default; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
-.card { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: Canvas; }
-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; border-bottom: 1px solid var(--border); gap: 16px; }
+.card { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 16px; background: var(--canvas); }
+header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; border-bottom: 1px solid var(--border); gap: 12px; flex-wrap: wrap; background: var(--content); border-radius: 16px 16px 0 0; }
 header > div { min-width: 0; }
-header button { flex: none; }
-h1 { font-size: 19px; line-height: 1.3; margin: 0; letter-spacing: -.02em; }
-h2 { font-size: 14px; margin: 0 0 12px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark, .brand-mark svg { display: block; width: 28px; height: 28px; flex: none; }
+h1 { font-size: 16px; line-height: 1.3; margin: 0; letter-spacing: -.02em; font-weight: 600; }
+h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+h3 { font-size: 14px; }
 p { margin: 6px 0; overflow-wrap: anywhere; }
 .muted { color: var(--muted); font-size: 13px; }
-.selection { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 16px; padding: 18px 24px; }
-label { display: grid; gap: 6px; min-width: 0; font-size: 12px; font-weight: 550; }
+.shell { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; padding: 12px; }
+.sidebar { display: flex; flex-direction: column; background: var(--content); border-radius: 12px; padding: 12px 10px; min-width: 0; }
+.primary-navigation { display: grid; gap: 5px; }
+.primary-navigation button, #projectNav button { display: block; width: 100%; text-align: left; overflow-wrap: anywhere; border-color: transparent; background: transparent; }
+.primary-navigation button[aria-pressed=true] { background: var(--ink); color: var(--on-selection); }
+#projectNav button[aria-pressed=true] { border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); background: color-mix(in srgb, var(--accent) 6%, var(--content)); }
+.sidebar h2 { margin: 24px 10px 8px; color: var(--muted); font-size: 12px; font-weight: 400; }
+#projectNav button { margin: 4px 0; }
+.environment { margin-top: auto; padding: 24px 2px 0; }
+label { display: grid; gap: 7px; min-width: 0; font-size: 12px; font-weight: 500; }
 select { width: 100%; font-size: 13px; font-weight: 400; text-overflow: ellipsis; }
-.discovery { padding: 0 24px 14px; border-bottom: 1px solid var(--border); }
+.discovery { margin-top: 14px; }
 .discovery > summary { width: fit-content; cursor: pointer; color: var(--muted); font-size: 12px; }
-nav { display: flex; gap: 6px; padding: 8px 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-nav button { border-color: transparent; background: transparent; }
-nav button[aria-selected=true] { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 28%); }
-.main { min-width: 0; padding: 24px; }
-.side { border-left: 1px solid var(--border); padding: 24px; min-width: 0; background: var(--surface); }
+.discovery .toolbar input { width: 100%; flex: 1 1 100%; }
+.workspace { min-width: 0; display: flex; flex-direction: column; background: var(--content); border-radius: 12px; }
+.project-context { padding: 18px 24px; border-bottom: 1px solid var(--border); }
+.selection { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.context-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.context-identity { min-width: 0; color: var(--muted); }
+.context-identity summary { cursor: pointer; font-size: 12px; }
 #selectionState { margin: 0 0 12px; }
-#targetSummary:empty { display: none; }
 #targetSummary { font: 12px/1.5 var(--font-mono, ui-monospace, monospace); }
-#useContext { margin: 0 0 20px; background: var(--accent); color: light-dark(white, #101820); border-color: transparent; }
+#useContext { background: var(--ink); color: var(--on-selection); border-color: transparent; }
+#projectTabs { display: flex; gap: 5px; padding: 16px 24px 0; flex-wrap: wrap; }
+#projectTabs > button { border-color: transparent; background: transparent; color: var(--muted); }
+#projectTabs > button[aria-selected=true] { color: var(--on-selection); background: var(--ink); }
+.body { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; }
+.main { min-width: 0; padding: 24px; }
+.section-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; justify-content: space-between; margin: 0 0 20px; }
+.section-head h2 { margin: 0; }
+#homePanel > .section-head h2 { font-size: 24px; font-weight: 500; letter-spacing: -.02em; }
+#newHomeWork, #newWork, #submitWork, #saveGoal { background: var(--ink); color: var(--on-selection); border-color: transparent; }
+.action-hint { color: var(--muted); font-size: 12px; margin: 8px 0 16px; }
+.action-hint:empty { display: none; }
+.project-grid { display: grid; gap: 10px; margin: 12px 0 28px; }
+.project-card { display: flex; align-items: center; gap: 16px; padding: 16px; border: 1px solid var(--border); border-radius: 12px; min-width: 0; }
+.project-card-copy { min-width: 0; flex: 1; }
+.project-card-copy strong { display: block; font-weight: 600; }
+.project-card-copy .muted { font: 12px/1.5 var(--font-mono, ui-monospace, monospace); }
+.project-card button { flex-shrink: 0; }
 .row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--border); }
 .row-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .row-name { font-weight: 600; }
 .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
-.toolbar input { flex: 1; width: 0; min-width: 120px; }
+header .toolbar { margin: 0; }
+.toolbar input { flex: 1; width: 0; min-width: 100px; }
 pre, textarea { white-space: pre-wrap; overflow-wrap: anywhere; width: 100%; font: 12px/1.6 var(--font-mono, ui-monospace, monospace); }
 pre { margin: 12px 0; background: var(--surface); padding: 14px; border-radius: 8px; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 12px; margin-bottom: 16px; }
-.metric { border: 1px solid var(--border); border-radius: 10px; padding: 16px; overflow-wrap: anywhere; }
+.metric { background: var(--surface); border-radius: 10px; padding: 16px; overflow-wrap: anywhere; }
 .metric strong { display: block; margin-top: 6px; font-size: 15px; }
-.preview { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 20px; }
-footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-:root[data-display-mode=fullscreen] body { padding: 24px; background: var(--surface); }
-:root[data-display-mode=fullscreen] .card { max-width: 1200px; margin: 0 auto; min-height: calc(100dvh - 48px); display: flex; flex-direction: column; }
-:root[data-display-mode=fullscreen] .body { flex: 1; }
-@media (max-width: 700px) {
-  .body { grid-template-columns: 1fr; }
-  .side { border-left: 0; border-top: 1px solid var(--border); }
-  .selection { grid-template-columns: 1fr; gap: 12px; }
-  header { align-items: flex-start; }
-  header, .main, .side { padding: 16px; }
-  .selection { padding: 16px; }
-  .discovery { padding: 0 16px 12px; }
-  nav { padding: 8px 12px; }
-  .row { align-items: flex-start; }
-  .row-actions { width: 100%; }
-  :root[data-display-mode=fullscreen] body { padding: 12px; }
-  :root[data-display-mode=fullscreen] .card { min-height: calc(100dvh - 24px); }
+.work-card { padding: 18px 0; border-bottom: 1px solid var(--border); }
+.work-card strong { font-weight: 600; }
+.work-card summary { color: var(--muted); cursor: pointer; }
+.badge { display: inline-block; font-size: 12px; background: var(--surface); border-radius: 6px; padding: 2px 7px; margin-left: 8px; }
+.attention, .availability { border-radius: 12px; background: var(--surface); padding: 16px; margin: 16px 0; }
+.availability h3 { font-weight: 500; margin: 0 0 8px; }
+.availability details { margin-top: 12px; }
+.availability summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.availability .error-detail { margin-top: 8px; font: 12px/1.5 var(--font-mono, ui-monospace, monospace); }
+.availability[data-state=denied] h3, .availability[data-state=stale] h3 { color: var(--warning); }
+.editor { padding: 18px; border: 1px solid var(--border); border-radius: 12px; margin: 16px 0; background: var(--surface); }
+.editor label { margin: 12px 0; }
+.editor textarea { min-height: 80px; font-family: inherit; font-size: 13px; }
+#instanceForm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; width: 100%; }
+#instanceInput { width: 180px; }
+.instance-menu { position: relative; }
+.instance-menu summary { cursor: pointer; padding: 9px 12px; border-radius: 8px; color: var(--muted); }
+.instance-menu[open] summary { background: var(--surface); }
+.instance-options { position: absolute; right: 0; top: 100%; z-index: 3; min-width: 180px; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--content); box-shadow: 0 8px 24px light-dark(#00000014, #00000050); }
+.instance-options button { width: 100%; }
+#fileSelection { margin-top: 8px; }
+.file-check { flex: none; width: 16px; height: 16px; }
+#preview { min-width: 0; background: var(--surface); padding: 20px; margin: 0 24px 24px; border-radius: 10px; }
+#markdownPreview { overflow-wrap: anywhere; }
+#markdownPreview p { white-space: pre-wrap; }
+.side { min-width: 0; margin-top: auto; border-top: 1px solid var(--border); padding: 14px 24px; }
+#referenceTray > summary { display: flex; align-items: center; gap: 10px; cursor: pointer; width: fit-content; }
+#referenceTray > summary::after { content: "⌄"; color: var(--muted); }
+#referenceTray[open] > summary::after { content: "⌃"; }
+#referenceCount { background: var(--surface); color: var(--muted); border-radius: 5px; padding: 1px 7px; font-size: 12px; }
+.reference-body { padding-top: 12px; }
+#references { display: flex; flex-wrap: wrap; gap: 10px; }
+#references .row { border: 0; padding: 4px 0; max-width: 100%; }
+#references .row-copy { flex: auto; }
+footer { padding: 0 22px 12px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+:root[data-display-mode=fullscreen] body { padding: 16px; background: var(--canvas); }
+:root[data-display-mode=fullscreen] .card { max-width: 1440px; margin: 0 auto; min-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
+:root[data-display-mode=fullscreen] .shell { flex: 1; }
+:root[data-display-mode=inline] .shell { grid-template-columns: 1fr; }
+:root[data-display-mode=inline] .sidebar { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: start; }
+:root[data-display-mode=inline] .primary-navigation { display: flex; flex-wrap: wrap; }
+:root[data-display-mode=inline] .primary-navigation button { width: auto; }
+:root[data-display-mode=inline] .sidebar > h2, :root[data-display-mode=inline] #projectNav { display: none; }
+:root[data-display-mode=inline] .environment { padding: 0; margin: 0; }
+@media (min-width:1100px) { .body.with-detail { grid-template-columns: minmax(0,1fr) 330px; } .body.with-detail #preview { margin: 24px 24px 24px 0; } }
+@media (max-width:700px) {
+  .shell, :root[data-display-mode=inline] .shell { grid-template-columns: 1fr; padding: 8px; gap: 8px; }
+  .sidebar, :root[data-display-mode=inline] .sidebar { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 12px; }
+  .primary-navigation { display: flex; gap: 5px; }
+  .primary-navigation button { width: auto; }
+  .sidebar > h2, #projectNav { display: none; }
+  .environment { padding: 0; margin: 0; }
+  .selection { grid-template-columns: 1fr; }
+  .main, .project-context, .side { padding: 16px; }
+  #projectTabs { padding: 12px 16px 0; }
+  #projectTabs > button { padding: 8px 10px; }
+  .project-card { flex-wrap: wrap; padding: 14px; gap: 10px; }
+  .project-card-copy { flex-basis: 160px; }
+  #preview { margin: 0 16px 16px; }
+  header { padding: 12px 16px; }
+  :root[data-display-mode=fullscreen] body { padding: 8px; }
+  :root[data-display-mode=fullscreen] .card { min-height: calc(100dvh - 16px); }
 }
-@media (pointer: coarse) { button, select, input { min-height: 44px; } }
-
-.shell { display:grid; grid-template-columns:205px minmax(0,1fr); min-height:600px; }
-.workspace { min-width:0; }
-:root[data-display-mode=inline] .shell { min-height:0; }
-.sidebar { border-right:1px solid var(--border); background:var(--surface); padding:18px 12px; min-width:0; }
-.sidebar > button, #projectNav button { display:block; width:100%; text-align:left; margin:4px 0; overflow-wrap:anywhere; border-color:transparent; background:transparent; }
-.sidebar button[aria-pressed=true] { background:Canvas; border-color:var(--border); font-weight:600; }
-.sidebar h2 { margin:24px 8px 8px; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; }
-.sidebar .selection { display:block; padding:0; }
-.sidebar label { margin:12px 0; }
-.sidebar .discovery { padding:10px 0; border:0; }
-.sidebar .toolbar input { width:100%; }
-.body { grid-template-columns:minmax(0,1fr); }
-.side { border:0; border-top:1px solid var(--border); padding:14px 24px; }
-.side h2 { margin-bottom:4px; }
-#references { display:flex; flex-wrap:wrap; gap:10px; }
-#references .row { border:0; padding:4px 0; max-width:100%; }
-#references .row-copy { flex:auto; }
-#preview { background:var(--surface); padding:20px; border-radius:10px; }
-.section-head { display:flex; align-items:center; flex-wrap:wrap; gap:10px; justify-content:space-between; margin:0 0 16px; }
-.project-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr)); gap:12px; margin:12px 0 24px; }
-.project-card { padding:16px; border:1px solid var(--border); border-radius:10px; min-width:0; }
-.project-card button { margin-top:12px; }
-.work-card { padding:18px 0; border-bottom:1px solid var(--border); }
-.work-card strong { font-weight:600; }
-.work-card summary { color:var(--muted); cursor:pointer; }
-.badge { display:inline-block; font-size:11px; border:1px solid var(--border); border-radius:5px; padding:2px 6px; margin-left:8px; }
-.attention { border:1px solid var(--border); border-radius:10px; padding:14px; margin:16px 0; }
-.editor { padding:18px; border:1px solid var(--border); border-radius:10px; margin:16px 0; background:var(--surface); }
-.editor label { margin:12px 0; }
-.editor textarea { min-height:80px; font-family:inherit; font-size:13px; }
-#instanceForm { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
-#instanceName { font-size:18px; font-weight:600; }
-#instanceInput { width:180px; }
-#fileSelection { margin-top:8px; }
-.file-check { flex:none; width:16px; height:16px; }
-#markdownPreview { overflow-wrap:anywhere; }
-#markdownPreview p { white-space:pre-wrap; }
-@media(min-width:1100px) { .body.with-detail { grid-template-columns:minmax(0,1fr) 330px; } .body.with-detail #preview { border-left:1px solid var(--border); margin:0; border-radius:0; } }
-@media(max-width:700px) { .shell { grid-template-columns:1fr; } .sidebar { border-right:0; border-bottom:1px solid var(--border); padding:12px 16px; } #projectNav { display:flex; flex-wrap:wrap; gap:4px; } #projectNav button { width:auto; max-width:100%; } .sidebar .selection { display:grid; grid-template-columns:1fr; } .main { padding:20px 16px; } header { flex-wrap:wrap; } }
+@media (pointer:coarse) { button, select, input, .instance-menu summary { min-height: 44px; } input, textarea { font-size: 16px; } }
+@media (prefers-reduced-motion:reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+@media (forced-colors:active) { button[aria-selected=true], button[aria-pressed=true] { outline: 2px solid Highlight; } }
+/* BEGIN GENERATED SELECTION MOTION CSS */
+[data-selection-motion]{isolation:isolate}[data-selection-motion] [data-selection-motion-item]{position:relative;z-index:1;background:transparent!important;color:var(--selection-motion-base-ink, var(--ui-text-primary))!important}[data-selection-motion] [data-selection-motion-item]:not(:focus-visible){box-shadow:none!important}[data-selection-motion] [data-selection-motion-overlay]{position:absolute;left:0;top:0;display:block;box-sizing:border-box;margin:0;padding:0;border:0;pointer-events:none!important;user-select:none}[data-selection-motion] [data-selection-motion-plate]{z-index:0;background:var(--selection-motion-fill, var(--ui-text-primary));transform-origin:center}[data-selection-motion] [data-selection-motion-foreground]{z-index:2;width:100%;height:100%;overflow:visible;background:transparent}[data-selection-motion] [data-selection-motion-label]{position:absolute;box-sizing:border-box;display:flex;margin:0;overflow:hidden;background:transparent}[data-selection-motion-foreground],[data-selection-motion-foreground] *{color:var(--selection-motion-ink, var(--ui-content))!important}[data-selection-motion] [data-selection-motion-overlay][hidden]{display:none}@media(forced-colors:active){[data-selection-motion] [data-selection-motion-overlay]{display:none}[data-selection-motion] [data-selection-motion-item]{color:ButtonText!important}[data-selection-motion] [data-selection-motion-selected]{background:Highlight!important;color:HighlightText!important;forced-color-adjust:none}[data-selection-motion] [data-selection-motion-selected] *{color:HighlightText!important}}[data-selection-motion] [data-selection-motion-origin]{width:0;height:0;overflow:hidden}
+/* END GENERATED SELECTION MOTION CSS */
 </style>
 </head>
 <body>
 <div class="card">
-<header><div><h1 id="instanceName">WebCodex Workbench</h1><p class="muted">Projects, work and shared attention</p></div><div class="toolbar"><button id="renameInstance" type="button">Rename</button><button id="refresh" type="button">Refresh</button></div><form id="instanceForm" hidden><input id="instanceInput" aria-label="Instance name" maxlength="80"/><button id="saveInstance" type="button">Save name</button><button id="resetInstance" type="button">Use default</button><button id="closeInstance" type="button">Close</button></form></header>
-<div class="shell"><aside class="sidebar" aria-label="Workbench navigation"><button id="homeNav" type="button" aria-pressed="true">Home</button><button id="goalsNav" type="button">Goals</button><h2>Projects</h2><div id="projectNav"></div>
-<div class="selection"><label for="runnerSelect">Runner<select id="runnerSelect"><option value="">Choose a Runner</option></select></label><label for="projectSelect">Project<select id="projectSelect"><option value="">Choose a Project</option></select></label><label for="sessionSelect">Workflow Session<select id="sessionSelect"><option value="">Project overview · no Session selected</option></select></label><button id="sessionsMore" type="button" hidden>More Sessions</button></div>
+<header><div class="brand"><span class="brand-mark" aria-hidden="true"><!-- BEGIN WORKBENCH BRAND -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="#202329"/>
+  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="16.25" stroke="#FFFFFF" stroke-opacity=".18" stroke-width="1.5"/>
+  <path d="M18 16.5h27.5a5 5 0 0 1 5 5V38" stroke="#FFFFFF" stroke-opacity=".42" stroke-width="2.5" stroke-linecap="round"/>
+  <rect x="12.5" y="22.5" width="38" height="29" rx="7" fill="#F7F8FA"/>
+  <path d="m22.5 32 6.5 5.5-6.5 5.5" stroke="#202329" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M34 43h8.5" stroke="#202329" stroke-width="3.5" stroke-linecap="round"/>
+</svg>
+<!-- END WORKBENCH BRAND --></span><h1 id="instanceName">WebCodex Workbench</h1></div><div class="toolbar"><button id="refresh" type="button">Refresh</button><details id="instanceMenu" class="instance-menu"><summary>Instance options</summary><div class="instance-options"><button id="renameInstance" type="button">Rename</button></div></details></div><form id="instanceForm" hidden><input id="instanceInput" aria-label="Instance name" maxlength="80"/><button id="saveInstance" type="button">Save name</button><button id="resetInstance" type="button">Use default</button><button id="closeInstance" type="button">Close</button></form></header>
+<div class="shell"><aside class="sidebar" aria-label="Workbench navigation"><div class="primary-navigation"><button id="homeNav" type="button" aria-pressed="true">Home</button><button id="goalsNav" type="button">Goals</button></div><h2>Projects</h2><div id="projectNav"></div>
+<div class="environment"><label for="runnerSelect">Execution device · Runner<select id="runnerSelect"><option value="">Choose a Runner</option></select></label>
 <details class="discovery"><summary>Find a Runner or Project</summary>
 <form id="runnerSearchForm" class="toolbar"><input id="runnerQuery" aria-label="Find Runners" placeholder="Find a Runner" maxlength="200"/><button id="runnerSearch" type="button">Find Runners</button></form>
 <form id="projectSearchForm" class="toolbar"><input id="projectQuery" aria-label="Find Projects" placeholder="Find a Project" maxlength="200"/><button id="projectSearch" type="button">Find Projects</button><button id="projectsMore" type="button" hidden>More Projects</button></form>
-</details></aside><div class="workspace">
+</details></div></aside><div class="workspace">
+<section id="projectContext" class="project-context" hidden aria-label="Selected project context">
+<p id="selectionState" class="muted">Choose a Runner to begin.</p>
+<div class="selection"><label for="projectSelect">Project<select id="projectSelect"><option value="">Choose a Project</option></select></label><label for="sessionSelect">Workflow Session<select id="sessionSelect"><option value="">Project overview · no Session selected</option></select></label><button id="sessionsMore" type="button" hidden>More Sessions</button></div>
+<div class="context-actions"><details class="context-identity"><summary>Project and device details</summary><p id="targetSummary" class="muted"></p></details><button id="useContext" type="button" hidden>Use selected context</button></div>
+</section>
 <nav id="projectTabs" role="tablist" aria-label="Project areas"><button id="tabOverview" role="tab" aria-controls="panelOverview">Overview</button><button id="tabFiles" role="tab" aria-controls="panelFiles">Files</button><button id="tabWork" role="tab" aria-controls="panelWork">Work</button><button id="tabGoals" hidden role="tab" aria-controls="panelGoals">Goals</button><button id="tabArtifacts" role="tab" aria-controls="panelArtifacts">Artifacts</button></nav>
 <div class="body" id="contentBody"><main class="main">
-<p id="selectionState" class="muted">Choose a Runner to begin.</p><p id="targetSummary" class="muted"></p><button id="useContext" type="button" hidden>Use selected context</button>
-<section id="homePanel"><div class="section-head"><h2>Home</h2><button id="newHomeWork" type="button">New work</button></div><div id="sharedAttention" class="attention" hidden></div><section id="todoDetail" class="editor" hidden></section><h2 id="recentProjectsTitle">Available projects</h2><div id="recentProjects" class="project-grid"></div><h2 id="homeWorkHeading">Work progress · all Projects</h2><div id="homeWork"></div><p id="homeEmpty" class="muted">Loading work…</p><p id="homeWorkCoverage" class="muted"></p><button id="homeWorkMore" type="button" hidden>More work</button></section>
+
+<section id="homePanel"><div class="section-head"><div><h2>Workspace</h2><p class="muted">Projects, work and shared attention.</p></div><button id="newHomeWork" type="button" aria-describedby="homeActionHint">New work</button></div><p id="homeActionHint" class="action-hint"></p><div id="sharedAttention" class="attention" hidden></div><section id="todoDetail" class="editor" hidden></section><h2 id="recentProjectsTitle">Available projects</h2><div id="recentProjects" class="project-grid"></div><h2 id="homeWorkHeading">Work progress · all Projects</h2><section id="workAvailability" class="availability" role="status" hidden></section><div id="homeWork"></div><p id="homeEmpty" class="muted">Loading work…</p><p id="homeWorkCoverage" class="muted"></p><button id="homeWorkMore" type="button" hidden>More work</button></section>
 <section id="workEditor" class="editor" hidden><div class="section-head"><h2>Submit work</h2><button id="closeWork" type="button">Close</button></div><form id="workForm"><label>Project<select id="workProject" required></select></label><label>Executor<select id="workExecutor" required><option value="">Choose an executor</option></select></label><label>Provider / route<select id="workProvider"><option value="">Choose a route</option></select></label><p id="executionHint" class="muted"></p><label>Title<input id="workTitle" maxlength="200" required/></label><label>Instruction<textarea id="workInstruction" maxlength="8192" required rows="4"></textarea></label><label>Goal (optional)<select id="workGoal"><option value="">No Goal</option></select></label><button id="submitWork" type="button">Submit work</button><p id="workTaskIdentity" class="muted" hidden></p><button id="inspectWorkTask" type="button" hidden>Inspect submitted Task</button><div id="submittedTaskDetail" hidden></div><div id="workRecovery" class="attention" hidden><p id="workRecoveryWarning">This submission may already have created work. Inspect or reconcile the original Task before discarding this retry; discarding can create a second Task.</p><button id="discardWorkAttempt" type="button">Discard retry and start different work</button><button id="confirmDiscardWork" type="button" hidden>I inspected or reconciled it — unlock different work</button></div><p id="workStatus" role="status"></p></form></section>
 <section id="goalEditor" class="editor" hidden><div class="section-head"><h2 id="goalEditorTitle">Create Goal</h2><button id="closeGoal" type="button">Close</button></div><form id="goalForm"><label>Title<input id="goalTitle" maxlength="200" required/></label><label>Objective<textarea id="goalObjective" maxlength="8192" required rows="4"></textarea></label><label>Completion conditions · one per line<textarea id="goalConditions" maxlength="4096" rows="4"></textarea></label><button id="saveGoal" type="button">Save Goal</button><button id="reloadGoal" type="button" hidden>Load latest revision</button><p id="goalAttemptIdentity" class="muted" hidden></p><button id="inspectGoalAttempt" type="button" hidden>Inspect original Goal</button><div id="goalAttemptDetail" hidden></div><div id="goalRecovery" class="attention" hidden><p id="goalRecoveryWarning">This Goal creation may already have taken effect. Inspect the original Goal before discarding; starting again can create a duplicate.</p><button id="discardGoalAttempt" type="button">Discard retry and start different Goal</button><button id="confirmDiscardGoal" type="button" hidden>I inspected it — unlock different Goal</button></div><p id="goalStatus" role="status"></p></form></section>
-<section id="panelWork" role="tabpanel" aria-labelledby="tabWork" hidden><div class="section-head"><h2>Project work</h2><button id="newWork" type="button">New work</button></div><div id="projectWork"></div><p id="workCoverage" class="muted"></p><button id="workMore" type="button" hidden>More work</button></section>
-<section id="panelOverview" role="tabpanel" aria-labelledby="tabOverview"><h2>Project overview</h2><div id="overview" class="summary"></div><button id="projectReference" type="button" hidden>Add Project reference</button></section>
+<section id="panelWork" role="tabpanel" aria-labelledby="tabWork" hidden><div class="section-head"><h2>Project work</h2><button id="newWork" type="button" aria-describedby="workActionHint">New work</button></div><p id="workActionHint" class="action-hint"></p><section id="projectAvailability" class="availability" role="status" hidden></section><div id="projectWork"></div><p id="workCoverage" class="muted"></p><button id="workMore" type="button" hidden>More work</button></section>
+<section id="panelOverview" role="tabpanel" aria-labelledby="tabOverview"><h2>Project overview</h2><section id="overviewAvailability" class="availability" role="status" hidden></section><div id="overview" class="summary"></div><button id="projectReference" type="button" hidden>Add Project reference</button></section>
 <section id="panelFiles" role="tabpanel" aria-labelledby="tabFiles" hidden><h2>Project files</h2><p class="muted">Browse a directory or search file names. Previews are bounded.</p><form id="pathForm" class="toolbar"><button id="parentPath" type="button">Up</button><input id="filePath" aria-label="Directory path" placeholder="Project root" maxlength="4096"/><button id="openDirectory" type="button">Open directory</button></form><p id="pathCrumbs" class="muted"></p><button id="fileSelection" type="button" hidden>Add selected references</button></section>
-<section id="panelGoals" role="tabpanel" aria-labelledby="tabGoals" hidden><div class="section-head"><h2>Your Goals</h2><button id="newGoal" type="button">Create Goal</button></div><p class="muted">Your Goals are shared across Projects.</p></section>
+<section id="panelGoals" role="tabpanel" aria-labelledby="tabGoals" hidden><div class="section-head"><h2>Your Goals</h2><button id="newGoal" type="button" aria-describedby="goalActionHint">Create Goal</button></div><p id="goalActionHint" class="action-hint"></p><section id="goalAvailability" class="availability" role="status" hidden></section><p class="muted">Your Goals are shared across Projects.</p></section>
 <section id="panelArtifacts" role="tabpanel" aria-labelledby="tabArtifacts" hidden><h2>Session artifacts</h2><p class="muted">Observed outputs from the explicitly selected Workflow Session.</p></section>
 <div id="browser" hidden><form id="searchForm" class="toolbar"><input id="query" aria-label="Search resources" placeholder="Filter by name" maxlength="200"/><button id="searchResources" type="button">Search</button></form><div id="rows"></div><p id="coverage" class="muted"></p><button id="more" type="button" hidden>Show more</button></div>
 
-</main><section id="preview" class="preview" hidden aria-label="Resource preview"><h2 id="previewTitle"></h2><p id="previewMeta" class="muted"></p><pre id="previewContent"></pre><div id="markdownPreview" hidden></div><button id="closePreview" type="button">Close preview</button></section></div><aside class="side" aria-label="Selected references"><h2>References</h2><p id="referenceHint" class="muted">References are added only when you choose them.</p><div id="references"></div><p id="referenceStatus" role="status" class="muted"></p><label id="copyLabel" for="referenceText" hidden>Copy references<textarea id="referenceText" readonly rows="6"></textarea></label></aside>
+</main><section id="preview" class="preview" hidden aria-label="Resource preview"><h2 id="previewTitle"></h2><details class="context-identity"><summary>Resource details</summary><p id="previewMeta" class="muted"></p></details><pre id="previewContent"></pre><div id="markdownPreview" hidden></div><button id="closePreview" type="button">Close preview</button></section></div><aside class="side" aria-label="Selected references"><details id="referenceTray"><summary><span>References for your next message</span><span id="referenceCount">0</span></summary><div class="reference-body"><p id="referenceHint" class="muted">References are added only when you choose them.</p><div id="references"></div><p id="referenceStatus" role="status" class="muted"></p><label id="copyLabel" for="referenceText" hidden>Copy references<textarea id="referenceText" readonly rows="6"></textarea></label></div></details></aside>
 </div></div><footer id="status" role="status" aria-live="polite">Connecting to Host…</footer>
 </div>
 <script>
+/* BEGIN GENERATED SELECTION MOTION */
+"use strict";var WebCodexSelectionMotion=(()=>{var R=Object.defineProperty;var G=Object.getOwnPropertyDescriptor;var J=Object.getOwnPropertyNames;var Q=Object.prototype.hasOwnProperty;var Z=(t,a)=>{for(var s in a)R(t,s,{get:a[s],enumerable:!0})},_=(t,a,s,i)=>{if(a&&typeof a=="object"||typeof a=="function")for(let c of J(a))!Q.call(t,c)&&c!==s&&R(t,c,{get:()=>a[c],enumerable:!(i=G(a,c))||i.enumerable});return t};var ee=t=>_(R({},"__esModule",{value:!0}),t);var ne={};Z(ne,{createSelectionMotion:()=>te});var U="http://www.w3.org/2000/svg";function X(t,a){if(t.nodeType===3)return a.createTextNode(t.textContent??"");if(t.nodeType!==1)return null;let s=t;if(/^(input|select|textarea|script|style|iframe|object)$/i.test(s.localName))return null;let i=s.namespaceURI===U,c=i?a.createElementNS(U,s.localName):a.createElement("span");for(let{name:d,value:f}of Array.from(s.attributes))(d==="class"||d==="style"||i&&!/^(id|tabindex|role|aria-.+|on.+|href|xlink:href)$/i.test(d))&&c.setAttribute(d,f);if((!i||s.localName==="svg")&&a.defaultView){let d=a.defaultView.getComputedStyle(s),f=c.style;for(let y of["display","box-sizing","font","line-height","letter-spacing","text-transform","text-align","white-space","vertical-align","width","height","min-width","max-width","min-height","max-height","padding","margin","border-width","border-style","border-radius","align-items","align-self","justify-content","flex-direction","flex-wrap","flex-grow","flex-shrink","flex-basis","gap","order","overflow","overflow-wrap","word-break"])f.setProperty(y,d.getPropertyValue(y));f.borderColor="transparent"}for(let d of Array.from(s.childNodes)){let f=X(d,a);f&&c.appendChild(f)}return c}function j(t,a){return Math.abs(t.x-a.x)<.25&&Math.abs(t.y-a.y)<.25&&Math.abs(t.width-a.width)<.25&&Math.abs(t.height-a.height)<.25}function te(t,a={}){let s=t?.ownerDocument,i=s?.defaultView;if(!i||!t.querySelectorAll||!t.matches||!i.getComputedStyle)return{update(){},destroy(){}};let c=a.itemSelector??'[role="tab"], button',d=a.selectedSelector??'[aria-selected="true"], [aria-pressed="true"], .active',f=t.style.position,y=i.getComputedStyle(t).position==="static";y&&(t.style.position="relative");let m=s.createElement("span"),p=s.createElement("span"),b=s.createElement("span");b.dataset.selectionMotionOrigin="",m.dataset.selectionMotionPlate="",p.dataset.selectionMotionForeground="";for(let n of[m,p,b])n.dataset.selectionMotionOverlay="",n.setAttribute("aria-hidden","true"),n.setAttribute("inert","");t.dataset.selectionMotion="",t.append(m,p,b);let x=[],v=null,g="0px",B=[],w=!1,M=!1,A=0,O=i.matchMedia?.("(prefers-reduced-motion: reduce)"),H=i.matchMedia?.("(forced-colors: active)"),P=new i.MutationObserver(n=>{let o=n.filter(e=>{let r=e.target.nodeType===1?e.target:e.target.parentElement;return r?.localName==="input"&&["name","type","value"].includes(e.attributeName??"")||r!==t&&!r?.closest(c)?!1:!r?.closest("[data-selection-motion-overlay]")&&!(r===t&&e.attributeName==="data-selection-motion")&&e.attributeName!=="data-selection-motion-item"&&e.attributeName!=="data-selection-motion-selected"});if(!o.length)return;let l=o.every(e=>e.type==="attributes"&&["aria-selected","aria-pressed","class","data-active","checked","name","value"].includes(e.attributeName??""));N({animate:l})}),F=()=>P.observe(t,{subtree:!0,childList:!0,characterData:!0,attributes:!0}),E=typeof i.ResizeObserver=="function"?new i.ResizeObserver(()=>u()):null;E?.observe(t);let z=new i.MutationObserver(()=>u());function S(n){let o=n.getBoundingClientRect(),l=b.getBoundingClientRect();return{x:o.left-l.left,y:o.top-l.top,width:o.width,height:o.height}}function C(n){return{transform:`translate(${n.x}px, ${n.y}px)`,width:`${n.width}px`,height:`${n.height}px`}}function L(n){return`inset(${n.y}px calc(100% - ${n.x+n.width}px) calc(100% - ${n.y+n.height}px) ${n.x}px round ${g})`}function V(){for(let n of B)n.cancel();B=[]}function Y(n){for(let o of x)n.includes(o)||(o.removeAttribute("data-selection-motion-item"),o.removeAttribute("data-selection-motion-selected"),E?.unobserve(o));for(let o of n)x.includes(o)||E?.observe(o);x=n,p.replaceChildren();for(let o of x){o.dataset.selectionMotionItem="",o.toggleAttribute("data-selection-motion-selected",o.matches(d));let l=S(o),e=i.getComputedStyle(o),r=s.createElement("span");r.dataset.selectionMotionLabel="",Object.assign(r.style,{left:`${l.x}px`,top:`${l.y}px`,width:`${l.width}px`,height:`${l.height}px`,font:e.font,letterSpacing:e.letterSpacing,textTransform:e.textTransform,lineHeight:e.lineHeight,textAlign:e.textAlign,whiteSpace:e.whiteSpace,justifyContent:/flex|grid/.test(e.display)?e.justifyContent:/left|start/.test(e.textAlign)?"flex-start":/right|end/.test(e.textAlign)?"flex-end":"center",alignItems:/flex|grid/.test(e.display)?e.alignItems:"center",flexDirection:e.flexDirection,gap:e.gap,padding:e.padding,borderWidth:e.borderWidth,borderStyle:"solid",borderColor:"transparent"});for(let D of Array.from(o.childNodes)){let h=X(D,s);h&&r.appendChild(h)}p.appendChild(r)}}function N({animate:n=!0}={}){if(w||M)return;M=!0,P.disconnect(),y&&(t.style.position=f,y=!1),i.getComputedStyle(t).position==="static"&&(t.style.position="relative",y=!0);let o=Array.from(t.querySelectorAll(c)).filter(h=>!h.closest("[data-selection-motion-overlay]")),l=o.find(h=>h.matches(d)),e=l?S(l):null,r=v&&!m.hidden?S(m):null;if(!!e&&!!v&&j(e,v)&&n){M=!1,F();return}if(V(),Y(o),v=e,m.hidden=p.hidden=!e||e.width<=0||e.height<=0,e&&l){Object.assign(m.style,C(e)),g=i.getComputedStyle(l).borderRadius||"0px";let h=l.lastElementChild;if(h instanceof i.HTMLElement&&(!g||/^0(?:px)?$/.test(g))){let $=S(h);j($,e)&&(g=i.getComputedStyle(h).borderRadius||g)}if(m.style.borderRadius=g,p.style.clipPath=L(e),n&&r&&!j(r,e)&&!O?.matches&&!H?.matches&&typeof m.animate=="function"&&r){let $=e.x-r.x,k=e.y-r.y,T=Math.hypot($,k),q=T?.03*Math.abs($)/T:0,I=T?.03*Math.abs(k)/T:0,K={x:e.x-e.width*q/2,y:e.y-e.height*I/2,width:e.width*(1+q),height:e.height*(1+I)},W={duration:260,easing:"cubic-bezier(.2,.75,.25,1)",fill:"none"};B=[m.animate([C(r),{...C(K),offset:.72},C(e)],W),p.animate([{clipPath:L(r)},{clipPath:L(K),offset:.72},{clipPath:L(e)}],W)]}}M=!1,F()}function u(){w||A||(A=i.requestAnimationFrame(()=>{A=0,N({animate:!1})}))}return z.observe(s.documentElement,{attributes:!0,attributeFilter:["class","style","lang","data-mantine-color-scheme","data-theme","data-resolved-theme","data-display-mode"]}),s.body!==t&&z.observe(s.body,{attributes:!0,attributeFilter:["class","style","lang","data-theme"]}),O?.addEventListener("change",u),H?.addEventListener("change",u),i.addEventListener("resize",u),s.fonts?.addEventListener("loadingdone",u),N({animate:!1}),{update:N,destroy(){if(!w){w=!0,P.disconnect(),E?.disconnect(),z.disconnect(),V(),i.cancelAnimationFrame(A),O?.removeEventListener("change",u),H?.removeEventListener("change",u),i.removeEventListener("resize",u),s.fonts?.removeEventListener("loadingdone",u);for(let n of x)n.removeAttribute("data-selection-motion-item"),n.removeAttribute("data-selection-motion-selected");m.remove(),p.remove(),b.remove(),t.removeAttribute("data-selection-motion"),y&&(t.style.position=f)}}}}return ee(ne);})();
+/* END GENERATED SELECTION MOTION */
 (() => {
   "use strict";
   const el = id => document.getElementById(id);
+  const tabMotion = typeof WebCodexSelectionMotion === "undefined" ? null : WebCodexSelectionMotion.createSelectionMotion(el("projectTabs"), {itemSelector:"[role=tab]", selectedSelector:"[aria-selected=true]"});
   const AREAS = ["Overview", "Files", "Work", "Goals", "Artifacts"];
   const KINDS = { Files: "file", Goals: "goal", Artifacts: "artifact" };
   const MAX_JSON = 262144, MAX_PREVIEW = 24576, MAX_REFERENCE = 4096, MAX_REFERENCES = 12;
@@ -209,6 +272,7 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
       && context.displayMode !== document.documentElement.getAttribute("data-display-mode")) {
       document.documentElement.setAttribute("data-display-mode", context.displayMode); lastHeight = 0;
     }
+    tabMotion?.update({animate:false});
     reportSize();
   }
   const object = v => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -251,6 +315,8 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
     return result.output;
   }
   function errorMessage(error) { return "Unavailable: " + String(error.message || error).slice(0,512); }
+  // Authentication and permission loss must clear previously authorized work.
+  function accessLost(message) { return /denied|forbidden|unauthori[sz]ed|not authorized|authenticat(?:ion|e)?[\s_-]*(?:required|failed)|authori[sz]ation[\s_-]*required|permission[\s_-]*required|credentials?[\s_-]*(?:expired|revoked)/i.test(message); }
   function option(value, title) { const node = document.createElement("option"); node.value = value; node.textContent = title; return node; }
   function renderProjects() {
     el("projectSelect").replaceChildren(option("", "Choose a Project"));
@@ -271,6 +337,11 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
   }
   function clearScope() {
     selectionCopy="";
+    workHasSnapshot=false;workReadStatus="loading";workReadMessage="";workNext=null;
+    el("homeWorkMore").hidden=true;el("workMore").hidden=true;
+    workbench={...workbench,capabilities:{},tasks:null,goals:null,agents:null,todos:[],errors:{}};
+    el("homeWork").replaceChildren();el("projectWork").replaceChildren();
+    for(const id of ["workAvailability","projectAvailability","overviewAvailability","goalAvailability"])el(id).hidden=true;
     scope++; listGeneration++; previewGeneration++; overviewGeneration++;
     for (const [id, entry] of pending) if (entry.generation !== null) {
       clearTimeout(entry.timer); pending.delete(id); entry.reject(new Error("Selection changed"));
@@ -292,19 +363,27 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
     const validSelection = area === "Goals" || !!project && (area !== "Artifacts" || !!session);
     el("browser").hidden = home || ["Overview","Work"].includes(area) || !validSelection;
     el("homePanel").hidden=!home;el("projectTabs").hidden=home||area==="Goals";
+    el("projectContext").hidden=home||area==="Goals";
+    el("goalsNav").setAttribute("aria-pressed",String(!home&&area==="Goals"));
     for(const name of AREAS) el("panel"+name).hidden=home || name!==area;
     el("homeNav").setAttribute("aria-pressed",String(home));
     el("selectionState").hidden=home; el("targetSummary").hidden=home;
     el("newWork").disabled=!ready||!project||disposed; el("newGoal").disabled=!ready||disposed;
-    el("selectionState").textContent = area === "Goals" ? "Your Goals · across Projects" : !runner ? projectDiscoveryMessage || "Choose a Runner to begin." : !project ? projectDiscoveryMessage || "Choose a Project to begin." : area === "Artifacts" && !session ? "Choose a Workflow Session to browse its artifacts." : "Project · " + project + (session ? " · Session · " + session : " · No Session selected");
     const selected=projectLink(), git=selected?._meta?.git;
-    el("targetSummary").textContent=project ? [runner,selected?._meta?.path,git?.branch,git?.head?.slice(0,8),git?.dirty===true?"changed":git?.dirty===false?"clean":"Git unknown",git?"Runner inventory · not freshly checked":""].filter(Boolean).join(" · ") : "";
+    el("selectionState").textContent = area === "Goals" ? "Your Goals · across Projects" : !runner ? projectDiscoveryMessage || "Choose a Runner to begin." : !project ? projectDiscoveryMessage || "Choose a Project to begin." : area === "Artifacts" && !session ? "Choose a Workflow Session to browse its artifacts." : "Project · " + (selected?.title||selected?.name||"Selected project") + (session ? " · Session selected" : " · No Session selected");
+    el("targetSummary").textContent=project ? ["Project: "+project,runner,selected?._meta?.path,session?"Session: "+session:null,git?.branch,git?.head?.slice(0,8),git?.dirty===true?"changed":git?.dirty===false?"clean":"Git unknown",git?"Runner inventory · not freshly checked":""].filter(Boolean).join(" · ") : "";
     el("useContext").hidden=!project;
     el("useContext").disabled=!ready||disposed||contextBusy||queuedReferences>0;
     el("projectReference").hidden = !selected;
     el("renameInstance").disabled=workbench.capabilities.settings!==true;el("newGoal").disabled=!ready||disposed||workbench.capabilities.manage_goals!==true;el("newWork").disabled=el("newHomeWork").disabled=!ready||disposed||workbench.capabilities.submit_work!==true;
     el("projectReference").textContent = acceptsReferences() ? "Add Project reference" : "Prepare Project reference text";
     el("projectReference").disabled = !ready || disposed;
+    renderActionHints();tabMotion?.update();
+  }
+  function renderActionHints() {
+    const reason=disposed?"This workbench is closed.":!ready?"Connect to the Host before submitting work.":workbench.capabilities.submit_work!==true?"Work submission is unavailable for this connection.":"";
+    el("homeActionHint").textContent=reason;el("workActionHint").textContent=reason;
+    el("goalActionHint").textContent=disposed?"This workbench is closed.":!ready?"Connect to the Host before creating a Goal.":workbench.capabilities.manage_goals!==true?"Goal creation is unavailable for this connection.":"";
   }
   function projectLink() { return projects.find(item => [item._meta?.project_ref,item._meta?.project,item.uri].includes(project)) || selectedProjectLink; }
   async function chooseProject(value, selectedSession = "") {
@@ -391,6 +470,8 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
   // This adapter consumes canonical runtime pages. Missing capabilities fail closed.
   let workbench = {capabilities:{},tasks:{tasks:[]},goals:{goals:[]},agents:{agents:[]},providers:[],todos:[],errors:{}}, workGeneration=0, workNext=null;
   const selectedSessions=new Map();let homeAttentionScope="",homeAttentionProject="",todoSelection=null,todoFence=null,todoDraftPayload=null,todoCompletionKey=null,todoSubmitting=false,todoDiscardArmed=false,todoAnswerNode=null,todoStatusNode=null;
+  let workReadStatus="loading",workReadMessage="",workHasSnapshot=false;
+  let lastReferenceCount=0,lastSelectionCopy="";
   let executionState=null,executors=[], workSubmitting=false, workKey=null, workPayload=null,workSubmittedPayload=null,workUncertain=false,workDiscardArmed=false,workTaskId=null,workPriorTaskId=null;
   const cancelReceipts=new Map();
   let editingGoal=null, goalGeneration=0, goalSaving=false, goalKey=null, goalPayload=null,goalSubmittedPayload=null,goalUncertain=false,goalDiscardArmed=false,goalUncertainId=null,goalPriorId=null;
@@ -410,7 +491,8 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
     for(const item of recent.slice(0,12)){
       const open=()=>{userSelected=true;void chooseProject(item._meta?.project||item._meta?.project_ref);};
       const card=document.createElement("div");card.className="project-card";
-      card.append(textNode("strong",item.title||item.name),textNode("p",item._meta?.path||"","muted"),action("Open project",open));el("recentProjects").append(card);
+      const copy=textNode("div","","project-card-copy");copy.append(textNode("strong",item.title||item.name),textNode("p",item._meta?.path||"","muted"));
+      card.append(copy,action("Open project",open));el("recentProjects").append(card);
     }
     if(!recent.length)el("recentProjects").append(textNode("p","Choose a Runner or find a project to begin.","muted"));
   }
@@ -430,6 +512,7 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
     if(!ready||disposed||document.hidden)return;
     const generation=scope,local=++workGeneration,homeSnapshot=home,projectSnapshot=project,sessionSnapshot=session,lastProject=Array.from(selectedSessions.keys()).filter(Boolean).at(-1)||"",homeSessionProject=lastProject,homeSession=homeSessionProject?selectedSessions.get(homeSessionProject)||"":"",selected=homeSnapshot?"":projectSnapshot,selectedSession=homeSnapshot?"":sessionSnapshot,offset=append?workNext:0;
     if(offset===null)return;
+    if(!workHasSnapshot){workReadStatus="loading";renderAvailability();}
     try {
       const output=validWorkbench(await tool("read_workbench_state",{...(selected?{project:selected}:{}),...(selectedSession?{session_id:selectedSession}:{}),offset,limit:20}));
       if(disposed||generation!==scope||local!==workGeneration||homeSnapshot!==home||projectSnapshot!==project||sessionSnapshot!==session)return;
@@ -456,13 +539,20 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
         }
       }
       if(append)output.tasks.tasks=[...(workbench.tasks?.tasks||[]),...(output.tasks?.tasks||[])].slice(0,500);
+      workReadStatus="ready";workReadMessage="";workHasSnapshot=true;
       workbench=output;workNext=(output.tasks?.tasks?.length||0)<500&&Number.isSafeInteger(output.tasks?.next_offset)&&output.tasks.next_offset>offset?output.tasks.next_offset:null;
       renderWorkbench();
-    } catch(error) {if(!disposed&&generation===scope&&local===workGeneration){el("homeEmpty").textContent=errorMessage(error);el("workCoverage").textContent=errorMessage(error);}}
+    } catch(error) {if(!disposed&&generation===scope&&local===workGeneration){
+      workReadMessage=errorMessage(error);
+      const denied=accessLost(workReadMessage);
+      workReadStatus=denied?"denied":workHasSnapshot?"stale":"error";
+      if(denied){workHasSnapshot=false;workNext=null;workbench={...workbench,capabilities:{},tasks:null,goals:null,agents:null,todos:[],errors:{}};}
+      renderWorkbench();
+    }}
     finally {if(!disposed&&generation===scope)scheduleRefresh();}
   }
   function renderWorkbench() {
-    const settings=workbench.settings;
+    const settings=workbench.settings||{};
     const displayName=settings.display_name||settings.instance_name||"WebCodex Workbench";el("instanceName").textContent=displayName;document.title=displayName;
     el("renameInstance").disabled=workbench.capabilities.settings!==true;
     el("newGoal").disabled=workbench.capabilities.manage_goals!==true;
@@ -473,9 +563,10 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
       el("homeWork").append(workCard(item));el("projectWork").append(workCard(item));
     }
     const count=workbench.tasks?.tasks?.length||0;
-    el("homeEmpty").textContent=workbench.errors.tasks?"Work unavailable: "+limitText(workbench.errors.tasks,512):count?"":"No work observed yet.";
-    el("homeEmpty").hidden=count>0&&!workbench.errors.tasks;
-    el("workCoverage").textContent=workbench.errors.tasks?"Work unavailable: "+limitText(workbench.errors.tasks,512):`${home?"All Projects":"Selected Project"} · ${count} work items shown`+(workbench.tasks?.truncated?" · Partial results":"");
+    const unavailable=!!workbench.errors.tasks||["loading","error","denied"].includes(workReadStatus);
+    el("homeEmpty").textContent=count||unavailable?"":"No work observed yet.";
+    el("homeEmpty").hidden=!!count||unavailable;
+    el("workCoverage").textContent=unavailable?"":`${home?"All Projects":"Selected Project"} · ${count} work items shown`+(workbench.tasks?.truncated?" · Partial results":"");
     el("homeWorkCoverage").textContent=el("workCoverage").textContent;
     el("homeWorkHeading").textContent=home?"Work progress · all Projects":"Work progress";
     el("workMore").hidden=workNext===null;el("homeWorkMore").hidden=workNext===null;
@@ -488,9 +579,30 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
       if(bounded(todo.session_id,256)&&bounded(todo.message_id,256)) {const row=document.createElement("div");row.className="attention-item";row.append(textNode("p",message));row.append(action("Review",()=>openTodo(todo)));el("sharedAttention").append(row);}
       else el("sharedAttention").append(textNode("p",message));
     }}
-    for(const [section,error] of Object.entries(workbench.errors).slice(0,8))el("sharedAttention").append(textNode("p",section+": "+limitText(error,512),"muted"));
     el("sharedAttention").hidden=!el("sharedAttention").children.length;
+    renderAvailability();renderActionHints();
     if(!executionState || el("workEditor").hidden || workbench.project===el("workProject").value){executionState=workbench;renderExecutors();}renderGoalChoices();
+  }
+  // One summary per visible surface; equal messages share a single diagnostic.
+  // Resource failures never turn an unknown inventory into a successful empty one.
+  function renderAvailability() {
+    const errors=Object.entries(workbench.errors||{}).filter(([,value])=>value).slice(0,8);
+    if(workReadMessage)errors.unshift(["work",workReadMessage]);
+    const loading=workReadStatus==="loading"&&!workHasSnapshot;
+    for(const id of ["workAvailability","projectAvailability","overviewAvailability","goalAvailability"]) {
+      const node=el(id);node.replaceChildren();node.hidden=!loading&&!errors.length;
+      node.setAttribute("data-state",workReadStatus);
+      if(node.hidden)continue;
+      if(loading){node.append(textNode("h3","Loading work data…"),textNode("p","Projects load independently and remain available to browse.","muted"));continue;}
+      const denied=workReadStatus==="denied"||errors.some(([,message])=>accessLost(message));
+      const stale=workReadStatus==="stale";
+      node.setAttribute("data-state",denied?"denied":stale?"stale":"error");
+      node.append(textNode("h3",stale?"Update failed · previous snapshot":denied?"Some work data is not accessible":"Some work data is unavailable"),textNode("p",stale?"Previously read data may have changed. Refresh before relying on its execution state.":"Loaded projects remain available. Unavailable data does not mean there are no work records.","muted"));
+      const details=document.createElement("details");details.append(textNode("summary",`Read details · ${errors.length} affected resources`));
+      const grouped=new Map();for(const [resource,message]of errors){const text=limitText(message,512);if(!grouped.has(text))grouped.set(text,[]);grouped.get(text).push(resource);}
+      for(const [message,resources]of grouped)details.append(textNode("p",resources.join(", ")+": "+message,"error-detail"));
+      node.append(details,action("Retry read",()=>void loadWorkbench()));
+    }
   }
   function workCard(item) {
     const cardScope=scope;
@@ -824,6 +936,9 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
   function renderReferences() {
     el("useContext").disabled=!ready||!project||disposed||contextBusy||queuedReferences>0;
     el("references").replaceChildren();
+    el("referenceCount").textContent=String(content.length);
+    if(content.length>lastReferenceCount||selectionCopy&&selectionCopy!==lastSelectionCopy)el("referenceTray").open=true;
+    lastReferenceCount=content.length;lastSelectionCopy=selectionCopy;
     for (const block of content) {
       const node=document.createElement("div"); node.className="row";
       const name=document.createElement("div"); name.className="row-copy"; name.textContent=block.title || block.name || blockUri(block) || "Attached context";
@@ -950,7 +1065,7 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
     } catch(error) {if (!disposed) {el("status").textContent=errorMessage(error); if (ready && !project) void loadProjects();} }
   }
   function teardown() {
-    if (disposed) return; disposed=true;scope++;listGeneration++;previewGeneration++;contextGeneration++;stopRefresh();
+    if (disposed) return; disposed=true;tabMotion?.destroy();scope++;listGeneration++;previewGeneration++;contextGeneration++;stopRefresh();
     sizeObserver.disconnect();
     for (const [id,entry] of pending) {clearTimeout(entry.timer);notify("notifications/cancelled",{requestId:id,reason:"Workbench closed"});entry.reject(new Error("Workbench closed"));}
     pending.clear();updateControls();
@@ -976,7 +1091,7 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
   el("newWork").onclick=openWork;el("newHomeWork").onclick=openWork;el("closeWork").onclick=()=>{el("workEditor").hidden=true;};el("workForm").onsubmit=submitWork;el("workExecutor").onchange=renderExecutionRoute;el("workProject").onchange=()=>void loadExecutionOptions();
   for(const id of ["workTitle","workInstruction"])el(id).oninput=renderExecutionRoute;el("workGoal").onchange=renderExecutionRoute;el("inspectWorkTask").onclick=()=>void inspectSubmittedTask();el("discardWorkAttempt").onclick=discardWorkRetry;el("confirmDiscardWork").onclick=discardWorkRetry;
   el("workMore").onclick=el("homeWorkMore").onclick=()=>void loadWorkbench(true);
-  el("renameInstance").onclick=()=>{el("instanceForm").hidden=false;el("instanceInput").value=workbench.settings?.display_name_override||"";};
+  el("renameInstance").onclick=()=>{el("instanceMenu").open=false;el("instanceForm").hidden=false;el("instanceInput").value=workbench.settings?.display_name_override||"";};
   el("instanceForm").onsubmit=event=>{event.preventDefault();const value=el("instanceInput").value.trim();if(bounded(value,80))void saveInstance(value);};el("resetInstance").onclick=()=>void saveInstance(null);el("closeInstance").onclick=()=>{el("instanceForm").hidden=true;};
   el("pathForm").onsubmit=event=>{event.preventDefault();void loadDirectory();};el("parentPath").onclick=()=>{el("filePath").value=fileDirectory.split("/").slice(0,-1).join("/");void loadDirectory();};
   el("fileSelection").onclick=async()=>{const items=[...selectedFiles.values()];for(const item of items)await addReference(item);selectedFiles.clear();updateFileSelection();};
@@ -1004,6 +1119,7 @@ footer { padding: 12px 24px; border-top: 1px solid var(--border); color: var(--m
     el(button).onclick=event=>el(form).onsubmit(event);
     el(form).onkeydown=event=>{if(event.key==="Enter"&&event.target?.tagName!=="TEXTAREA"&&event.target?.tagName!=="BUTTON"){event.preventDefault();el(form).onsubmit(event);}};
   }
+  el("referenceTray").ontoggle=reportSize;
   el("projectQuery").value="";
   el("runnerQuery").value="";
   selectArea("Overview");home=true;updateControls();renderRunners();renderProjects();renderReferences();

@@ -20,10 +20,10 @@ const browser = await chromium.launch({ headless: true,
   ...(process.env.WEBCODEX_SMOKE_BROWSER ? { executablePath: process.env.WEBCODEX_SMOKE_BROWSER } : {}) });
 const report = { fixture: true, nativeHost: false, browser: browser.version(), cases: [] };
 
-async function mount(kind, width, mode = 'fullscreen', empty = false) {
+async function mount(kind, width, mode = 'fullscreen', empty = false, record = false) {
   const html = await readFile(new URL(`../../src/mcp_${kind}_app.html`, import.meta.url), 'utf8');
   // Deliberately disagree with the Host theme, so system preference cannot hide a bug.
-  const page = await browser.newPage({ viewport: { width, height: 720 }, colorScheme: 'light', reducedMotion: 'reduce' });
+  const page = await browser.newPage({ viewport: { width, height: 720 }, colorScheme: 'light', reducedMotion: kind === 'workbench' ? 'no-preference' : 'reduce', recordVideo: record ? {dir:output.pathname,size:{width:1440,height:720}} : undefined });
   page.setDefaultTimeout(5000);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -31,7 +31,7 @@ async function mount(kind, width, mode = 'fullscreen', empty = false) {
   await page.evaluate(({ html, state, kind, mode, empty, workbenchState, goalDetail }) => {
     const frame = document.createElement('iframe');
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-    window.fixture = { sizes: [], calls: [], errors: [], closed: false };
+    window.fixture = { sizes: [], calls: [], contextUpdates: [], errors: [], closed: false };
     const notify = (method, params) => frame.contentWindow.postMessage({ jsonrpc: '2.0', method, params }, '*');
     const result = output => ({ structuredContent: { success: true, output } });
     const reply = (id, value) => frame.contentWindow.postMessage({ jsonrpc: '2.0', id, result: value }, '*');
@@ -53,6 +53,7 @@ async function mount(kind, width, mode = 'fullscreen', empty = false) {
     fixtureGoal.plan.steps = [{ id: 'step_navigation', title: 'Make navigation clear', status: 'in_progress', updated_at_unix_ms: 1 }];
     fixtureGoal.correlations = [{ kind: 'agent_task', reference_id: fixtureTask.task_id, created_at_unix_ms: 1 }];
     const goalResource = { type: 'resource_link', uri: 'webcodex-resource://goal/Z29hbA', name: fixtureGoal.summary.title, title: fixtureGoal.summary.title, _meta: { kind: 'goal', goal_id: fixtureGoal.summary.goal_id } };
+    window.setWorkbenchFixture = patch => Object.assign(fixtureWorkbench, patch);
     fixture.completedTodo = false;
     fixture.workSubmitAttempts = 0;
     window.changeContext = context => notify('ui/notifications/host-context-changed', context);
@@ -62,7 +63,7 @@ async function mount(kind, width, mode = 'fullscreen', empty = false) {
       const message = event.data;
       if (message.id === 9000 && message.result) fixture.closed = true;
       else if (message.method === 'ui/initialize') reply(message.id, {
-        protocolVersion: '2026-01-26', hostCapabilities: {}, hostContext: { theme: 'dark', displayMode: mode },
+        protocolVersion: '2026-01-26', hostCapabilities: kind === 'workbench' ? {updateModelContext:{resourceLink:{}}} : {}, hostContext: { theme: 'dark', displayMode: mode },
       });
       else if (message.method === 'ui/notifications/initialized') {
         notify('ui/notifications/tool-input', { arguments: kind === 'workbench' || empty ? {} : { project: state.project } });
@@ -72,14 +73,17 @@ async function mount(kind, width, mode = 'fullscreen', empty = false) {
       } else if (message.method === 'ui/notifications/size-changed') {
         fixture.sizes.push(message.params);
         if (mode === 'inline') frame.style.height = `${message.params.height}px`;
+      } else if (message.method === 'ui/update-model-context') {
+        fixture.contextUpdates.push(message.params);reply(message.id,{});
       } else if (message.method === 'tools/call') {
         fixture.calls.push(message.params);
         const name = message.params.name;
         if (name === 'list_runners') reply(message.id, result(runner));
         else if (name === 'search_webcodex_resources') reply(message.id, result(message.params.arguments.kind === 'project' ? projects : message.params.arguments.kind === 'goal' ? { items: [goalResource], next_offset: null } : { items: [], next_offset: null }));
-        else if (name === 'list_sessions') reply(message.id, result({ sessions: [], next_offset: null }));
+        else if (name === 'list_sessions') reply(message.id, result({ sessions: [{session_id:'wc_sess_abcdefghijklmnop',title:'Fixture Session'}], next_offset: null }));
         else if (name === 'read_workbench_state') {
-          const send = () => reply(message.id, result({ ...fixtureWorkbench, todos: fixture.completedTodo ? [] : fixtureWorkbench.todos }));
+          if(fixture.holdReads)return;
+          const send = () => reply(message.id, fixture.failReads ? {structuredContent:{success:false,error:'Fixture connection interrupted'}} : result({ ...fixtureWorkbench, todos: fixture.completedTodo ? [] : fixtureWorkbench.todos }));
           // A real Host can deliver the first state after the initial size event.
           // Exercise this ordering deterministically instead of relying on timing.
           if (mode === 'inline' && !fixture.delayedState) { fixture.delayedState = true; setTimeout(send, 150); }
@@ -107,6 +111,7 @@ async function mount(kind, width, mode = 'fullscreen', empty = false) {
   }, { html, state: baseState, kind, mode, empty, workbenchState, goalDetail });
   const frame = page.frames().find(frame => frame.parentFrame());
   await frame.locator('#status').filter({ hasNotText: /Connecting/ }).waitFor();
+  if (!empty) await frame.locator('#refresh:not(:disabled)').waitFor();
   return { page, frame, errors };
 }
 
@@ -136,9 +141,9 @@ async function readableControls(frame) {
 }
 
 try {
-  for (const kind of ['workbench', 'work_result']) for (const width of [320, 600, 1024, 1440]) {
+  for (const kind of ['workbench', 'work_result']) for (const width of [320, 390, 800, 1440]) {
     await run(`${kind}: Host theme, layout, context changes, disposal (${width}px)`, async () => {
-      const { page, frame, errors } = await mount(kind, width);
+      const { page, frame, errors } = await mount(kind, width, 'fullscreen', false, kind==='workbench'&&width===1440);
       try {
         await page.screenshot({ path: new URL(`${kind}-${width}.png`, output).pathname });
         assert.equal(await frame.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'dark');
@@ -151,16 +156,45 @@ try {
           assert.equal((await page.evaluate(() => fixture.calls)).filter(call => call.name === 'get_work_result_state').length, 0);
           await frame.locator('#runnerSelect').selectOption('special');
           await frame.locator('#projectSelect option').nth(1).waitFor({ state: 'attached' });
-          await frame.locator('#projectSelect').selectOption(project);
+          await frame.locator('#recentProjects').getByRole('button', { name: 'Open project' }).first().click();
           await frame.locator('#overview .metric').first().waitFor();
+          assert.equal(await frame.locator('#referenceCount').textContent(),'0');
+          assert.equal(await frame.locator('#referenceTray').getAttribute('open'),null);
+          await frame.locator('#projectReference').click();
+          await frame.waitForFunction(()=>document.querySelector('#referenceCount').textContent==='1');
+          assert.equal(await frame.locator('#referenceTray').evaluate(node=>node.open),true);
+          const attached=await page.evaluate(()=>JSON.stringify(fixture.contextUpdates));
+          await frame.locator('#sessionSelect').selectOption('wc_sess_abcdefghijklmnop');
+          assert.equal(await page.evaluate(()=>JSON.stringify(fixture.contextUpdates)),attached,'Session selection must not retarget references');
+          await frame.locator('#sessionSelect').selectOption('');
+          await frame.locator('#references').getByRole('button',{name:'Remove'}).click();
+          await frame.waitForFunction(()=>document.querySelector('#referenceCount').textContent==='0');
+
+          const motion = frame.locator('#projectTabs [data-selection-motion-plate]');
+          const start = await motion.boundingBox();
           await frame.locator('#tabFiles').click();
+          const moving = await motion.evaluate(element => {
+            const animation=element.getAnimations()[0];
+            if(!animation)return null;
+            animation.pause();animation.currentTime=85;
+            return {frames:animation.effect.getKeyframes(),duration:animation.effect.getTiming().duration};
+          });
+          assert.ok(moving, 'Workbench must animate a persistent selection plate');
+          assert.equal(moving.duration,260);
+          const middle=await motion.boundingBox();
+          const end=await frame.locator('#tabFiles').boundingBox();
+          assert.ok(Math.abs(middle.x-start.x)>1&&Math.abs(middle.x-end.x)>0.2,'Plate must pass through an intermediate position');
+          await motion.evaluate(element=>{for(const animation of element.parentElement.getAnimations({subtree:true})){animation.finish();}});
+          const aligned=await motion.boundingBox();assert.ok(Math.abs(aligned.x-end.x)<1&&Math.abs(aligned.width-end.width)<1,'Plate ends aligned');
           await frame.locator('#openDirectory').click();
           await frame.locator('#rows .row').filter({hasText:'README.md'}).getByRole('button',{name:'Preview',exact:true}).click();
           await frame.locator('#markdownPreview').waitFor();
           assert.match(await frame.locator('#markdownPreview').textContent(), /<script>fixtureMarkup/);
           assert.equal(await frame.locator('#markdownPreview script').count(), 0);
           assert.ok(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Preview overflows');
+          if(width===1440){await page.setViewportSize({width,height:1000});await page.locator('iframe').evaluate(node=>node.style.height='1000px');}
           await page.screenshot({path:new URL(`workbench-preview-${width}.png`,output).pathname});
+          if(width===1440){await page.setViewportSize({width,height:720});await page.locator('iframe').evaluate(node=>node.style.height='720px');}
           await frame.locator('#closePreview').click();
           await frame.locator('#tabFiles').focus();
           await frame.locator('#tabFiles').press('Enter');
@@ -207,7 +241,7 @@ try {
         assert.equal(await page.evaluate(() => fixture.sizes.length), count, 'Disposed App still reports size');
         assert.deepEqual(await page.evaluate(() => fixture.errors), []);
         assert.deepEqual(errors, []);
-      } finally { await page.close(); }
+      } finally { const video=page.video();await page.close();if(video)await video.saveAs(new URL('workbench-motion.webm',output).pathname); }
     });
   }
   for (const kind of ['workbench', 'work_result']) await run(`${kind}: inline height follows content without resize loops`, async () => {
@@ -234,6 +268,39 @@ try {
       assert.ok(await frame.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 1), 'Inline content is clipped');
       assert.deepEqual(errors, []);
     } finally { await page.close(); }
+  });
+  for(const mode of ['inline','fullscreen']) for(const width of [320,390,800,1440]) await run(`workbench: exceptional data states (${mode}/${width})`,async()=>{
+    const {page,frame,errors}=await mount('workbench',width,mode);
+    try {
+      await frame.locator('#homeWork .work-card').first().waitFor();
+      await page.evaluate(()=>setWorkbenchFixture({tasks:null,goals:null,agents:null,todos:[],errors:{tasks:'Canonical read is unavailable',goals:'Canonical read is unavailable',agents:'Canonical read is unavailable'}}));
+      await frame.locator('#refresh').click();
+      await frame.locator('#workAvailability:not([hidden])').waitFor();
+      assert.equal(await frame.locator('#homeEmpty').isVisible(),false);
+      await frame.locator('#workAvailability summary').click();
+      assert.equal(await frame.locator('#workAvailability .error-detail').count(),1);
+      assert.match(await frame.locator('#workAvailability').textContent(),/tasks, goals, agents/);
+      await page.evaluate(()=>changeContext({theme:'light'}));
+      await frame.waitForFunction(()=>document.documentElement.style.colorScheme==='light');
+      await readableControls(frame);
+      assert.ok(await frame.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+      if(width===1440&&mode==='fullscreen')await page.screenshot({path:new URL('workbench-unavailable-light.png',output).pathname,fullPage:true});
+      await page.evaluate(()=>setWorkbenchFixture({tasks:{tasks:[],next_offset:null},errors:{}}));
+      await frame.locator('#refresh').click();
+      await frame.locator('#homeEmpty').filter({hasText:'No work observed'}).waitFor();
+      assert.equal(await frame.locator('#workAvailability').isVisible(),false);
+      await page.evaluate(()=>fixture.failReads=true);
+      await frame.locator('#refresh').click();
+      await frame.locator('#workAvailability[data-state=stale]').waitFor();
+      await page.evaluate(()=>{fixture.failReads=false;setWorkbenchFixture({tasks:null,errors:{tasks:'communication.read denied'}});});
+      await frame.locator('#refresh').click();
+      await frame.locator('#workAvailability[data-state=denied]').waitFor();
+      assert.equal(await frame.locator('#homeEmpty').isVisible(),false);
+      await page.evaluate(()=>fixture.holdReads=true);
+      await frame.locator('#homeNav').click();
+      await frame.locator('#workAvailability[data-state=loading]').waitFor();
+      assert.deepEqual(errors,[]);
+    }finally{await page.close();}
   });
   await run('workbench: projected run actions and assignment-fenced todo completion', async () => {
     const { page, frame, errors } = await mount('workbench', 900, 'fullscreen');

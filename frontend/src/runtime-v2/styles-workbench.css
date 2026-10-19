@@ -351,3 +351,10 @@ html[data-resolved-theme="dark"] .conversation-list { background: var(--ui-surfa
   .app-nav, .mobile-app-bar, .app-content, .modal-card { border-color: CanvasText; background: Canvas; box-shadow: none; }
   .nav-button.active { outline: 2px solid Highlight; }
 }
+
+/* One persistent level selector survives Goals/Activity/Session replacement. */
+.work-view-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; height: 100%; min-height: 0; }
+.work-view-navigation { width: 278px; max-width: 100%; padding: 10px var(--web-panel-inset); background: var(--ui-content); border-radius: var(--ui-radius-md); }
+.work-view-body { min-width: 0; min-height: 0; }
+@media (max-width:1100px) { .work-view-navigation { width: 252px; } }
+@media (max-width:700px) { .work-view-shell { display: block; height: auto; } .work-view-navigation { width: 100%; margin-bottom: 12px; } }

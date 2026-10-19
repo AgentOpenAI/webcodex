@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import { displayProjectPath } from "../../ui/projectPresentation.js";
 import {
   Activity,
@@ -17,7 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { Progress, SegmentedControl, Stepper, TextInput } from "@mantine/core";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { RuntimeLanguage } from "../../runtime_i18n.js";
 import { translate } from "../../runtime_i18n.js";
 import type { RuntimeV2Client } from "../api/client.js";
@@ -36,8 +37,6 @@ type Props = {
   client: RuntimeV2Client;
   language: RuntimeLanguage;
   projects: ProjectRow[];
-  surface: WorkSurface;
-  onSurfaceChange: (surface: WorkSurface) => void;
   onOpenSession: (location: SessionLocation) => void;
   onOpenAgent: (agentId: string) => void;
   onOpenWindow: (windowKey: string) => void;
@@ -76,7 +75,14 @@ function WorkSurfaceSwitch({
   language: RuntimeLanguage;
 }) {
   const t = (value: string) => translate(value, language);
+  const surfaceRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(surfaceRef, surface, {
+    itemSelector: ".mantine-SegmentedControl-label",
+    selectedSelector: ".mantine-SegmentedControl-label[data-active]",
+  });
   return <SegmentedControl<WorkSurfaceTab>
+    ref={surfaceRef}
+    styles={{ indicator: { display: "none" } }}
     className="work-surface-control"
     aria-label={t("Work level")}
     value={surface === "goals" ? "goals" : "windows"}
@@ -98,8 +104,6 @@ export function GoalWorkbench({
   client,
   language,
   projects,
-  surface,
-  onSurfaceChange,
   onOpenSession,
   onOpenAgent,
   onOpenWindow,
@@ -162,7 +166,6 @@ export function GoalWorkbench({
         <div className="work-list-header goal-list-header">
           <div><span className="eyebrow">{t("Durable work")}</span><h1>{t("Work")}</h1></div>
           <IconButton label={t("Refresh")} onClick={state.refresh}><RefreshCw size={16} /></IconButton>
-          <WorkSurfaceSwitch surface={surface} onSurfaceChange={onSurfaceChange} language={language} />
         </div>
         <div className="goal-list-filters">
           <TextInput type="search" aria-label={t("Search Goals")} leftSection={<Search size={14} />}

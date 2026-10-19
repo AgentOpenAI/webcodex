@@ -72,3 +72,6 @@ __pycache__/
 # Desktop solid-surface verification and root Vite temporary modules.
 /artifacts/desktop-soft-surfaces/
 /node_modules/
+
+# Generated motion acceptance reports, screenshots and videos
+/artifacts/flowing-selection/

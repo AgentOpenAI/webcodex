@@ -327,3 +327,13 @@
   .window-activity-toolbar .window-session-focus { flex-basis: 100%; flex-wrap: nowrap; }
   .window-activity-toolbar .window-session-focus > span { width: auto; }
 }
+
+/* The radio label owns the moving selection; its span retains the focus ring. */
+.window-activity-order[data-selection-motion] label {
+  border-radius: 7px;
+}
+.window-activity-order[data-selection-motion] input:checked + span {
+  background: transparent;
+  border-color: transparent;
+  color: inherit;
+}

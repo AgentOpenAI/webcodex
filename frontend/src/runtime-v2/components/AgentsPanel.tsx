@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import {
   ArrowUpRight,
   Bot,
@@ -10,7 +11,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { MultiSelect } from "@mantine/core";
-import { FormEvent, useEffect, useState } from "react";
+import { useRef, FormEvent, useEffect, useState } from "react";
 import type { RuntimeLanguage } from "../../runtime_i18n.js";
 import { translate } from "../../runtime_i18n.js";
 import { absoluteTime, shortId } from "../model/format.js";
@@ -32,6 +33,8 @@ export function AgentsPanel({ client, language, onUnauthorized, selectedAgentId,
     ? [{ conversation_id: state.selectedConversationId, title: state.conversationDetail?.conversation?.title || t("Conversation") }, ...state.conversations]
     : state.conversations;
   const [section, setSection] = useState<"inbox" | "conversations" | "profile">("inbox");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, section);
   const inventoryPending = state.availability === "idle" || state.availability === "loading";
   const inventoryUnavailable = inventoryPending || state.availability === "error";
   const inventoryNotice = inventoryPending ? "Loading Agents…" : "Agents could not be loaded. Refresh to retry.";
@@ -167,7 +170,7 @@ export function AgentsPanel({ client, language, onUnauthorized, selectedAgentId,
       </aside>
 
       <section className="agents-main">
-        <div className="runtime-tabs agent-tabs" role="tablist" aria-label={t("Agent workspace")}>
+        <div ref={selectionRef} className="runtime-tabs agent-tabs" role="tablist" aria-label={t("Agent workspace")}>
           {([ ["inbox", "Inbox"], ["conversations", "All conversations"], ["profile", "Profile"] ] as const).map(([value, label]) =>
             <button key={value} role="tab" aria-selected={section === value} className={section === value ? "active" : ""} onClick={() => setSection(value)}>{t(label)}</button>)}
         </div>

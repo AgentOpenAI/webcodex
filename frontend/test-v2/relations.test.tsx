@@ -207,7 +207,7 @@ describe("Project / Session / Window relationships", () => {
 
     render(
       <WindowWorkbench client={client} language="en" projects={overview.projects}
-        surface="windows" onSurfaceChange={vi.fn()} onUnauthorized={vi.fn()} />,
+        onUnauthorized={vi.fn()} />,
     );
 
     fireEvent.click(await screen.findByTestId("work-window-row-" + firstKey));
@@ -396,7 +396,7 @@ describe("Project / Session / Window relationships", () => {
 
     render(
       <WindowWorkbench client={client} language="en" projects={overview.projects}
-        surface="windows" onSurfaceChange={vi.fn()} onUnauthorized={vi.fn()} />,
+        onUnauthorized={vi.fn()} />,
     );
     expect((await screen.findAllByText("tool-204")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("tool-0").length).toBeGreaterThan(0);

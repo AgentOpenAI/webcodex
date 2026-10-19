@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import { ArrowUpRight, Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { clearDraft, loadDraft, saveDraft } from "../../runtime_storage.js";
@@ -22,6 +23,8 @@ export function SessionComposer({ location, session, language }: Props) {
   const t = (value: string) => translate(value, language);
   const [composer, setComposer] = useState("");
   const [kind, setKind] = useState("note");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, kind);
   const [priority, setPriority] = useState("normal");
   const [requiresAck, setRequiresAck] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState("");
@@ -162,11 +165,12 @@ export function SessionComposer({ location, session, language }: Props) {
         />
         <div className="composer-footer">
           <div className="composer-controls">
-            <div className="composer-kind-tabs" aria-label={t("Message kind")}>
+            <div ref={selectionRef} className="composer-kind-tabs" aria-label={t("Message kind")}>
               {QUICK_MESSAGE_KINDS.map((item) => (
                 <button
                   key={item.value}
                   className={kind === item.value ? "active" : ""}
+                  aria-pressed={kind === item.value}
                   type="button"
                   onClick={() => { reviseDraft(); setKind(item.value); }}
                 >

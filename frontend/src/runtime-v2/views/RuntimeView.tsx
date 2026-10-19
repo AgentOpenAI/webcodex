@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import {
   ArrowUpRight,
   Bot,
@@ -8,7 +9,7 @@ import {
   Play,
   Server,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import type { RuntimeLanguage } from "../../runtime_i18n.js";
 import { translate } from "../../runtime_i18n.js";
 import type { RuntimeV2Client } from "../api/client.js";
@@ -77,6 +78,8 @@ export function RuntimeView({
 }: Props) {
   const t = (value: string) => translate(value, language);
   const [mode, setMode] = useState<RuntimeMode>("overview");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, mode);
   const [requestedAgentId, setRequestedAgentId] = useState("");
   useEffect(() => {
     if (!target) return;
@@ -105,7 +108,7 @@ export function RuntimeView({
         {overviewAvailability === "stale" && <span role="status">{t("Refresh failed · showing previous data")}</span>}
       </div>
 
-      <div className="runtime-tabs runtime-view-tabs equal-view-tabs" role="tablist" aria-label={t("Runtime")}>
+      <div ref={selectionRef} className="runtime-tabs runtime-view-tabs equal-view-tabs" role="tablist" aria-label={t("Runtime")}>
         <button className={mode === "overview" ? "active" : ""} role="tab" aria-selected={mode === "overview"} onClick={() => setMode("overview")}>
           <Server size={15} /> {t("Overview")}
         </button>

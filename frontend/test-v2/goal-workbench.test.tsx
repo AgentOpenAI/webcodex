@@ -70,7 +70,6 @@ function client(continuityOverrides: Record<string, unknown> = {}): RuntimeV2Cli
 
 describe("Goal Workbench", () => {
   it("renders durable Goal truth and navigates to exact existing resources", async () => {
-    const onSurfaceChange = vi.fn();
     const onOpenSession = vi.fn();
     const onOpenAgent = vi.fn();
     const onOpenWindow = vi.fn();
@@ -79,8 +78,6 @@ describe("Goal Workbench", () => {
         client={client()}
         language="en"
         projects={[{ id: "agent:special:webcodex", client_id: "special", name: "WebCodex", path: "/root/git/webcodex", connected: true }]}
-        surface="goals"
-        onSurfaceChange={onSurfaceChange}
         onOpenSession={onOpenSession}
         onOpenAgent={onOpenAgent}
         onOpenWindow={onOpenWindow}
@@ -107,8 +104,6 @@ describe("Goal Workbench", () => {
     expect(onOpenAgent).toHaveBeenCalledWith(controllerId);
     fireEvent.click(screen.getByText(/Window aaaaaaaaaa/));
     expect(onOpenWindow).toHaveBeenCalledWith(windowKey);
-    fireEvent.click(screen.getByRole("radio", { name: /Activity/ }));
-    expect(onSurfaceChange).toHaveBeenCalledWith("windows");
   });
 
   it("keeps Goal list and detail read-only", async () => {
@@ -117,8 +112,6 @@ describe("Goal Workbench", () => {
         client={client()}
         language="en"
         projects={[]}
-        surface="goals"
-        onSurfaceChange={vi.fn()}
         onOpenSession={vi.fn()}
         onOpenAgent={vi.fn()}
         onOpenWindow={vi.fn()}
@@ -133,7 +126,7 @@ describe("Goal Workbench", () => {
   });
   it.each([true, false])("distinguishes continuation conditions from actual resumed work (%s)", async (ready) => {
     render(<UiProvider><GoalWorkbench client={client({ production_auto_resume_available: ready, host_delivery: "accepted", fresh_turn: "not_confirmed" })}
-      language="en" projects={[]} surface="goals" onSurfaceChange={vi.fn()} onOpenSession={vi.fn()}
+      language="en" projects={[]} onOpenSession={vi.fn()}
       onOpenAgent={vi.fn()} onOpenWindow={vi.fn()} onUnauthorized={vi.fn()} /></UiProvider>);
     await screen.findByRole("heading", { name: "Runtime V2 Goal Workbench" });
     expect(screen.getAllByText(ready ? "Ready · not a guarantee" : "Not ready · continue manually").length).toBeGreaterThan(0);
@@ -148,8 +141,8 @@ it.each([403, 503])("explains unavailable Goal details instead of asking for sel
   const backing = client();
   const failing = { post: (path: string, ...args: unknown[]) => path === "goal"
     ? Promise.resolve({ ok: false, status }) : (backing.post as (...args: unknown[]) => unknown)(path, ...args) } as RuntimeV2Client;
-  render(<UiProvider><GoalWorkbench client={failing} language="en" projects={[]} surface="goals"
-    onSurfaceChange={vi.fn()} onOpenSession={vi.fn()} onOpenAgent={vi.fn()} onOpenWindow={vi.fn()} onUnauthorized={vi.fn()} /></UiProvider>);
+  render(<UiProvider><GoalWorkbench client={failing} language="en" projects={[]}
+    onOpenSession={vi.fn()} onOpenAgent={vi.fn()} onOpenWindow={vi.fn()} onUnauthorized={vi.fn()} /></UiProvider>);
   const message = status === 403 ? "Goal details are not available with this access key." : "Goal details could not be loaded.";
   expect(await screen.findByRole("heading", { name: message })).toBeTruthy();
   expect(screen.queryByRole("heading", { name: "Select a Goal" })).toBeNull();

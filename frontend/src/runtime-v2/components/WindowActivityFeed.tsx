@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
+import { useRef, useState } from "react";
 import type { RuntimeV2Client } from "../api/client.js";
 import { TraceCallDetails } from "./TraceCallDetails.js";
 import { CopyIdentity } from "./ui/CopyIdentity.js";
@@ -33,6 +34,8 @@ export function WindowActivityFeed({
 }: Props) {
   const t = (value: string) => translate(value, language);
   const [order, setOrder] = useState<"newest" | "oldest">("newest");
+  const orderRef = useRef<HTMLFieldSetElement | null>(null);
+  useFlowingSelection(orderRef, order, { itemSelector: "label", selectedSelector: "label:has(input:checked)" });
   const orderedSessions = windowSessionCatalog(detail);
   const sessionOrder = new Map(orderedSessions.map((session, index) => [session.workflow_session_id, index]));
   const sessionMeta = new Map(orderedSessions.map((session) => [session.workflow_session_id, session]));
@@ -110,7 +113,7 @@ export function WindowActivityFeed({
             <small>{visibleCalls.length}/{calls.length}</small>
           </div>
         )}
-        <fieldset className="window-activity-order">
+        <fieldset ref={orderRef} className="window-activity-order">
           <legend>{t("Activity order")}</legend>
           {(["newest", "oldest"] as const).map(value => (
             <label key={value}>

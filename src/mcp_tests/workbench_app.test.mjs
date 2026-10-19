@@ -635,7 +635,7 @@ test("Home can page the global Task overview with the same bounded request contr
  const view=await launch();const request=view.calls("read_workbench_state").at(-1);const first={...structuredClone(workbenchState),tasks:{tasks:[workbenchState.tasks.tasks[0]],total_count:2,next_offset:20,truncated:true}};await view.reply(request,toolResult(first));assert.equal(view.nodes.homeWorkMore.hidden,false);assert.equal(view.nodes.workMore.hidden,false);assert.match(view.nodes.homeWorkCoverage.textContent,/Partial results/);view.nodes.homeWorkMore.onclick();await flush();const next=view.calls("read_workbench_state").at(-1);assert.equal(next.params.arguments.offset,20);assert.equal(next.params.arguments.limit,20);await view.reply(next,toolResult({...workbenchState,tasks:{tasks:[{...workbenchState.tasks.tasks[0],task_id:"wc_task_secondtask000000"}],total_count:2,next_offset:null,truncated:false}}));assert.equal(view.nodes.homeWork.children.length,2);assert.equal(view.nodes.homeWorkMore.hidden,true);
 });
 test("section errors remain visible alongside successful canonical pages",async()=>{
- const view=await upgraded({errors:{tasks:{message:"communication.read denied"},providers:{message:"Runner offline"}}});assert.match(view.nodes.homeEmpty.textContent,/denied/);assert.equal(view.nodes.sharedAttention.hidden,false);assert.match(texts(view.nodes.sharedAttention),/Runner offline/);assert.doesNotMatch(texts(view.nodes.sharedAttention),/\[object Object\]/);assert.match(texts(view.nodes.homeWork),/Review files/);
+ const view=await upgraded({errors:{tasks:{message:"communication.read denied"},providers:{message:"Runner offline"}}});assert.equal(view.nodes.homeEmpty.hidden,true);assert.equal(view.nodes.workAvailability.hidden,false);assert.match(texts(view.nodes.workAvailability),/communication.read denied/);assert.match(texts(view.nodes.workAvailability),/Runner offline/);assert.doesNotMatch(texts(view.nodes.workAvailability),/\[object Object\]/);assert.equal(view.nodes.sharedAttention.hidden,true);assert.match(texts(view.nodes.homeWork),/Review files/);
 });
 test("permissions fail closed for all upgrade mutation controls",async()=>{
  const view=await upgraded({capabilities:{}});assert.equal(view.nodes.renameInstance.disabled,true);assert.equal(view.nodes.newGoal.disabled,true);assert.equal(view.nodes.newHomeWork.disabled,true);view.nodes.newWork.onclick();view.nodes.workForm.onsubmit(formEvent);view.nodes.newGoal.onclick();view.nodes.goalForm.onsubmit(formEvent);assert.equal(view.calls("submit_workbench_work").length,0);assert.equal(view.calls("create_goal").length,0);
@@ -735,4 +735,45 @@ test("attention refresh preserves a reply draft and an uncertain completion retr
 test("chat submission preserves its exact endpoint generation and malformed routes stay unavailable",async()=>{
  const view=await upgraded();view.nodes.newHomeWork.onclick();view.nodes.workProject.value=project;view.nodes.workProject.onchange();await flush();await view.reply(view.calls("read_workbench_state").at(-1),toolResult(workbenchState));view.nodes.workExecutor.value="0";view.nodes.workExecutor.onchange();view.nodes.workTitle.value="Use current chat";view.nodes.workInstruction.value="Continue the selected task";view.nodes.workForm.onsubmit(formEvent);await flush();const request=view.calls("submit_workbench_work").at(-1);assert.deepEqual(JSON.parse(JSON.stringify(request.params.arguments.execution)),workbenchState.execution_options[0]);
  const invalid=await upgraded({execution_options:[{kind:"chat",agent_id:agentId},{kind:"runner",agent_id:agentId,provider_id:"default",endpoint_id:"wc_endpoint_abcdefghijklmnop"}]});invalid.nodes.newHomeWork.onclick();assert.equal(invalid.nodes.workExecutor.children.length,1);assert.equal(invalid.nodes.submitWork.disabled,true);
+});
+
+
+test("equal section errors are grouped without turning unavailable work into empty work",async()=>{
+ const view=await upgraded({tasks:null,errors:{tasks:"Canonical read is unavailable",goals:"Canonical read is unavailable",agents:"Canonical read is unavailable"}});
+ const panel=view.nodes.workAvailability;
+ assert.equal(panel.hidden,false);assert.equal(view.nodes.homeEmpty.hidden,true);
+ assert.equal(texts(panel).split("Canonical read is unavailable").length-1,1);
+ assert.match(texts(panel),/tasks, goals, agents/);
+ assert.equal(view.nodes.sharedAttention.hidden,true);
+ assert.equal(view.nodes.referenceCount.textContent,"0");
+});
+test("loading, successful empty work, stale refresh and denied refresh remain distinct",async()=>{
+ const view=await launch();assert.equal(view.nodes.workAvailability.getAttribute("data-state"),"loading");
+ await view.reply(view.calls("read_workbench_state").at(-1),toolResult({...structuredClone(workbenchState),tasks:{tasks:[],next_offset:null}}));
+ assert.equal(view.nodes.workAvailability.hidden,true);assert.match(view.nodes.homeEmpty.textContent,/No work observed/);
+ view.nodes.refresh.onclick();await flush();await view.reply(view.calls("read_workbench_state").at(-1),toolResult(workbenchState));
+ view.nodes.refresh.onclick();await flush();await view.reject(view.calls("read_workbench_state").at(-1),{message:"Connection interrupted"});
+ assert.equal(view.nodes.workAvailability.getAttribute("data-state"),"stale");assert.match(texts(view.nodes.homeWork),/Review files/);
+ view.nodes.refresh.onclick();await flush();await view.reject(view.calls("read_workbench_state").at(-1),{message:"Access denied"});
+ assert.equal(view.nodes.workAvailability.getAttribute("data-state"),"denied");assert.equal(view.nodes.homeWork.children.length,0);assert.equal(view.nodes.newHomeWork.disabled,true);
+});
+for (const message of ["authentication_required", "Authentication required", "permission_required", "Credentials revoked"]) {
+ test(`revoked Workbench access clears previous work and actions: ${message}`,async()=>{
+  const view=await upgraded();assert.match(texts(view.nodes.homeWork),/Review files/);
+  view.nodes.refresh.onclick();await flush();await view.reject(view.calls("read_workbench_state").at(-1),{message});
+  assert.equal(view.nodes.workAvailability.getAttribute("data-state"),"denied");
+  assert.equal(view.nodes.homeWork.children.length,0);
+  assert.equal(view.nodes.newHomeWork.disabled,true);
+ });
+}
+test("a failed read in a new Project cannot revive the previous scope's work",async()=>{
+ const view=await upgraded({tasks:{...workbenchState.tasks,next_offset:20,truncated:true}});assert.match(texts(view.nodes.homeWork),/Review files/);assert.equal(view.nodes.homeWorkMore.hidden,false);
+ await selectProject(view);await view.reject(view.calls("read_workbench_state").at(-1),{message:"Project state unavailable"});
+ assert.equal(view.nodes.projectWork.children.length,0);assert.equal(view.nodes.projectAvailability.getAttribute("data-state"),"error");assert.equal(view.nodes.workMore.hidden,true);
+});
+test("references open on explicit addition and retain a user's collapsed choice on refresh",async()=>{
+ const view=await upgraded();await selectProject(view);view.nodes.projectReference.onclick();await flush();
+ await view.reply(refs(view).at(-1),{});assert.equal(view.nodes.referenceCount.textContent,"1");assert.equal(view.nodes.referenceTray.open,true);
+ view.nodes.referenceTray.open=false;view.nodes.sessionSelect.value="wc_sess_abcdefghijklmnop";view.nodes.sessionSelect.onchange();await flush();
+ assert.equal(view.nodes.referenceTray.open,false);assert.equal(view.nodes.referenceCount.textContent,"1");assert.equal(refs(view).length,1);
 });

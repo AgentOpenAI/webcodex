@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import { CopyIdentity } from "./ui/CopyIdentity.js";
 import { displayProjectPath } from "../../ui/projectPresentation.js";
 import { AlertTriangle, CircleDot, GitBranch, Monitor } from "lucide-react";
@@ -31,6 +32,8 @@ export function SessionInspector({
   language,
 }: Props) {
   const [tab, setTab] = useState<"context" | "evidence">("context");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, tab);
   const tabGroupId = useId();
   const tabButtons = useRef<Array<HTMLButtonElement | null>>([]);
   const tabs = ["context", "evidence"] as const;
@@ -54,7 +57,7 @@ export function SessionInspector({
           <strong>{tab === "context" ? t("What matters now") : t("Raw evidence")}</strong>
         </div>
       </div>
-      <div className="segmented" role="tablist" aria-label={t("Session context")}>
+      <div ref={selectionRef} className="segmented" role="tablist" aria-label={t("Session context")}>
         {tabs.map((value, index) => (
           <button
             key={value}

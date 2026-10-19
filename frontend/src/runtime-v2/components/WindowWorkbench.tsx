@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import {
   Box,
   CircleDot,
@@ -26,7 +27,6 @@ import { absoluteTime, clockTime, relativeTime, shortId } from "../model/format.
 import type { ProjectRow, WindowSummary } from "../model/types.js";
 
 import { useWindowWorkspace } from "../state/useWindowWorkspace.js";
-import { WorkSurfaceSwitch, type WorkSurface } from "./GoalWorkbench.js";
 import { WindowCollaboration } from "./WindowCollaboration.js";
 import { WindowActivityFeed } from "./WindowActivityFeed.js";
 import { TraceSearch } from "./TraceSearch.js";
@@ -36,8 +36,6 @@ type Props = {
   client: RuntimeV2Client;
   language: RuntimeLanguage;
   projects: ProjectRow[];
-  surface: WorkSurface;
-  onSurfaceChange: (surface: WorkSurface) => void;
   onUnauthorized: () => void;
   onOpenSessionRecord?: (project: string, sessionId: string) => void;
   requestedWindowKey?: string;
@@ -112,8 +110,6 @@ export function WindowWorkbench({
   client,
   language,
   projects,
-  surface,
-  onSurfaceChange,
   onUnauthorized,
   onOpenSessionRecord,
   requestedWindowKey,
@@ -129,6 +125,8 @@ export function WindowWorkbench({
   const selectedRowRef = useRef<HTMLButtonElement | null>(null);
   const [search, setSearch] = useState("");
   const [centerTab, setCenterTab] = useState<"window" | "collaboration">("window");
+  const selectionRef = useRef<HTMLDivElement | null>(null);
+  useFlowingSelection(selectionRef, centerTab);
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const historicalFamilies = useMemo(() => buildProjectFamilies(projects, projectIndex, windows.historicalWindows), [projects, projectIndex, windows.historicalWindows]);
   const familyById = useMemo(() => new Map(historicalFamilies.map(family => [family.id, family])), [historicalFamilies]);
@@ -282,7 +280,6 @@ export function WindowWorkbench({
       <aside className="work-list-panel window-primary-list">
         <div className="work-list-header">
           <div><span className="eyebrow">{t("Live work")}</span><h1>{t("Work")}</h1></div>
-          <WorkSurfaceSwitch surface={surface} onSurfaceChange={onSurfaceChange} language={language} />
         </div>
         <div className="window-work-filters">
           <button type="button" className="text-button" onClick={windows.refresh}>{t("Refresh")}</button>
@@ -409,7 +406,7 @@ export function WindowWorkbench({
               </details>
             </header>
 
-            <div className="session-view-tabs window-center-tabs equal-view-tabs" role="tablist" aria-label={t("Window views")}>
+            <div ref={selectionRef} className="session-view-tabs window-center-tabs equal-view-tabs" role="tablist" aria-label={t("Window views")}>
               <button
                 id="window-activity-tab"
                 role="tab"
