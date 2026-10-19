@@ -621,6 +621,120 @@
       },
       "target": "webcodex_repository",
       "experiment": "tool_selection"
+    },
+    {
+      "id": "knowledge_identifier",
+      "title": "Free identifier lookup",
+      "target": "knowledge_skill_disposable_fixture",
+      "experiment": "tool_selection",
+      "prompt": "Find the actual receipt identifier policy, distinguishing similarly named files. Report receipt-prefix and receipt-width from its current implementation. Choose whichever admitted tools you find useful. Do not edit the project or execute Skill scripts. End with one JSON object containing facts (the requested key=value strings, preserving source spelling) and sources (objects with path, start_line and end_line, one-based inclusive). Cite the lines that establish each fact.",
+      "correctness": {
+        "workspace_must_remain_clean": true,
+        "required_observations": [
+          "source content and citations match the independently prepared fixture",
+          "task facts and actual resource adoption are assessed separately",
+          "coordinator-owned source changes only; all other bytes and Git identity preserved"
+        ]
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent factual/range oracle plus exact fixture, Session/Project and bounded actual capture checks; driver declarations alone cannot qualify. Updates require an independently observed first read before the coordinator changes one source."
+      }
+    },
+    {
+      "id": "knowledge_procedure",
+      "title": "Free project procedure lookup",
+      "target": "knowledge_skill_disposable_fixture",
+      "experiment": "tool_selection",
+      "prompt": "Determine the current receipt audit procedure for this project. Report audit-order, audit-marker and audit-batch, distinguishing historical or similarly named material. Choose whichever admitted tools you find useful. Do not edit the project or execute Skill scripts. End with one JSON object containing facts (the requested key=value strings, preserving source spelling) and sources (objects with path, start_line and end_line, one-based inclusive). Cite the lines that establish each fact.",
+      "correctness": {
+        "workspace_must_remain_clean": true,
+        "required_observations": [
+          "source content and citations match the independently prepared fixture",
+          "task facts and actual resource adoption are assessed separately",
+          "coordinator-owned source changes only; all other bytes and Git identity preserved"
+        ]
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent factual/range oracle plus exact fixture, Session/Project and bounded actual capture checks; driver declarations alone cannot qualify. Updates require an independently observed first read before the coordinator changes one source."
+      }
+    },
+    {
+      "id": "knowledge_paraphrase",
+      "title": "Chinese project knowledge lookup",
+      "target": "knowledge_skill_disposable_fixture",
+      "experiment": "tool_selection",
+      "prompt": "请使用本项目提供的知识资源，查明收据台账保留多久、由哪个工作组负责，注意区分近似名称的旧材料。报告 ledger-window 和 ledger-owner，并引用当前来源。自行发现所需能力，不要求特定工具或调用顺序。 Do not edit the project or execute Skill scripts. End with one JSON object containing facts (the requested key=value strings, preserving source spelling) and sources (objects with path, start_line and end_line, one-based inclusive). Cite the lines that establish each fact.",
+      "correctness": {
+        "workspace_must_remain_clean": true,
+        "required_observations": [
+          "source content and citations match the independently prepared fixture",
+          "task facts and actual resource adoption are assessed separately",
+          "coordinator-owned source changes only; all other bytes and Git identity preserved"
+        ]
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent factual/range oracle plus exact fixture, Session/Project and bounded actual capture checks; driver declarations alone cannot qualify. Updates require an independently observed first read before the coordinator changes one source."
+      }
+    },
+    {
+      "id": "knowledge_source_update",
+      "title": "Project knowledge source update",
+      "target": "knowledge_skill_disposable_fixture",
+      "experiment": "tool_selection",
+      "prompt": "Use the project knowledge resources to establish the current ledger-window and ledger-owner. After reading the source, pause and report that you are ready for the operator source-change checkpoint; do not give the final answer yet. When the operator confirms the change, verify the previous source reference, refresh knowledge if needed, and report only the current facts with current citations. Do not edit the project or execute Skill scripts. End with one JSON object containing facts (the requested key=value strings, preserving source spelling) and sources (objects with path, start_line and end_line, one-based inclusive). Cite the lines that establish each fact.",
+      "correctness": {
+        "workspace_must_remain_clean": false,
+        "required_observations": [
+          "source content and citations match the independently prepared fixture",
+          "task facts and actual resource adoption are assessed separately",
+          "coordinator-owned source changes only; all other bytes and Git identity preserved"
+        ]
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent factual/range oracle plus exact fixture, Session/Project and bounded actual capture checks; driver declarations alone cannot qualify. Updates require an independently observed first read before the coordinator changes one source."
+      }
+    },
+    {
+      "id": "knowledge_skill_read",
+      "title": "Project Skill body and reference",
+      "target": "knowledge_skill_disposable_fixture",
+      "experiment": "tool_selection",
+      "prompt": "Use the project receipt audit Skill to determine audit-order, audit-marker and audit-batch. Discover the relevant Skill and read enough of its body and references to support the answer; distinguish near-name historical material. No particular tool or call order is prescribed. Do not edit the project or execute Skill scripts. End with one JSON object containing facts (the requested key=value strings, preserving source spelling) and sources (objects with path, start_line and end_line, one-based inclusive). Cite the lines that establish each fact.",
+      "correctness": {
+        "workspace_must_remain_clean": true,
+        "required_observations": [
+          "source content and citations match the independently prepared fixture",
+          "task facts and actual resource adoption are assessed separately",
+          "coordinator-owned source changes only; all other bytes and Git identity preserved"
+        ]
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent factual/range oracle plus exact fixture, Session/Project and bounded actual capture checks; driver declarations alone cannot qualify. Updates require an independently observed first read before the coordinator changes one source."
+      }
+    },
+    {
+      "id": "knowledge_skill_update",
+      "title": "Project Skill definition update",
+      "target": "knowledge_skill_disposable_fixture",
+      "experiment": "tool_selection",
+      "prompt": "Use the project receipt audit Skill to establish audit-order, audit-marker and audit-batch. Once its definition and necessary references have been read, pause for the operator checkpoint. After the operator confirms the definition changed, check the previously selected revision, recover current content, and report only the current facts and citations. Do not edit the project or execute Skill scripts. End with one JSON object containing facts (the requested key=value strings, preserving source spelling) and sources (objects with path, start_line and end_line, one-based inclusive). Cite the lines that establish each fact.",
+      "correctness": {
+        "workspace_must_remain_clean": false,
+        "required_observations": [
+          "source content and citations match the independently prepared fixture",
+          "task facts and actual resource adoption are assessed separately",
+          "coordinator-owned source changes only; all other bytes and Git identity preserved"
+        ]
+      },
+      "validation": {
+        "required": false,
+        "expectation": "Independent factual/range oracle plus exact fixture, Session/Project and bounded actual capture checks; driver declarations alone cannot qualify. Updates require an independently observed first read before the coordinator changes one source."
+      }
     }
   ]
 }

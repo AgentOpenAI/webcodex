@@ -10,6 +10,11 @@ The collector is a thin wrapper over `agent_loop_benchmark` sample ownership, fi
 runtime gates and `agent_loop_report` comparison. Existing Agent Loop evidence
 remains usable without the optional efficiency identity fields.
 
+Knowledge/Skill adoption uses a separate opt-in
+[acceptance protocol](knowledge-skill-acceptance.md). These cases and their
+authorized supplemental attempts do not replace or recount this historical
+18-sample baseline.
+
 ## Run the same three tasks
 
 Use a checkout whose HEAD is the exact source commit being tested. The runner

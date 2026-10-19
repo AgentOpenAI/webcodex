@@ -25,14 +25,24 @@ class ToolSelectionTests(unittest.TestCase):
 
     def test_selection_cases_are_separate_and_do_not_prescribe_tool_lanes(self) -> None:
         cases = [c for c in self.manifest["cases"] if c.get("experiment") == "tool_selection"]
-        self.assertEqual({case["id"] for case in cases}, {
+        repository_cases = [c for c in cases if c.get("target") == "webcodex_repository"]
+        fixture_cases = [c for c in cases if c.get("target") == "knowledge_skill_disposable_fixture"]
+        self.assertEqual({case["id"] for case in repository_cases}, {
             "selection_single_read", "selection_batch_read",
             "selection_cross_tool_review", "selection_compound_source_context",
             "selection_failed_test_recovery", "selection_session_recovery",
         })
-        self.assertEqual(len(benchmark.DEFAULT_SELECTION_CASES), 4)
+        self.assertEqual({case["id"] for case in fixture_cases}, {
+            "knowledge_identifier", "knowledge_procedure", "knowledge_paraphrase",
+            "knowledge_source_update", "knowledge_skill_read", "knowledge_skill_update",
+        })
+        self.assertEqual(len(cases), len(repository_cases) + len(fixture_cases))
+        self.assertEqual(benchmark.DEFAULT_SELECTION_CASES, (
+            "selection_single_read", "selection_batch_read",
+            "selection_cross_tool_review", "selection_compound_source_context",
+        ))
         self.assertTrue(set(benchmark.DEFAULT_SELECTION_CASES).issubset(
-            {case["id"] for case in cases}))
+            {case["id"] for case in repository_cases}))
         for case in cases:
             self.assertNotIn("code_mode_surface", case)
         invalid = copy.deepcopy(self.manifest)

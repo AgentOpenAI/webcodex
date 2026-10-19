@@ -348,10 +348,20 @@ jobs:
         run: node --test src/mcp_tests/*.test.mjs
       - name: Ensure Python tooling test dependencies
         run: |
-          if ! command -v rg >/dev/null 2>&1; then
+          if ! command -v rg >/dev/null 2>&1 || ! command -v zstd >/dev/null 2>&1; then
             sudo apt-get update
-            sudo apt-get install --no-install-recommends -y ripgrep
+            sudo apt-get install --no-install-recommends -y ripgrep zstd
           fi
+      - name: Test opt-in knowledge and Skill acceptance evidence
+        run: >-
+          python3 -B -m unittest
+          scripts.tests.test_agent_loop_benchmark
+          scripts.tests.test_agent_loop_report
+          scripts.tests.test_agent_efficiency_benchmark
+          scripts.tests.test_agent_temporal_evidence
+          scripts.tests.test_agent_knowledge_fixture
+          scripts.tests.test_agent_knowledge_evidence
+          scripts.tests.test_agent_knowledge_benchmark
       - name: Test optional Codex observation adapter
         run: python3 -m unittest discover -s integrations/codex -p 'test_*.py' -v
       - name: Test optional project knowledge provider

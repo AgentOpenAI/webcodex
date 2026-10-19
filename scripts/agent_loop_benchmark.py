@@ -14,6 +14,7 @@ import json
 import os
 import re
 import signal
+import sqlite3
 import stat
 import shutil
 import shlex
@@ -29,10 +30,14 @@ try:
     from scripts import agent_loop_report as report
     from scripts import agent_temporal_evidence as temporal
     from scripts.e2e_generic_agent_ws import GenericFixture, GENERIC_CASES, pressure_script, mixed_note_script, encoded_csv_script
+    from scripts.agent_knowledge_fixture import KnowledgeFixture, CASE_IDS as KNOWLEDGE_CASES
+    from scripts import agent_knowledge_evidence as knowledge
 except ModuleNotFoundError:
     import agent_loop_report as report
     import agent_temporal_evidence as temporal
     from e2e_generic_agent_ws import GenericFixture, GENERIC_CASES, pressure_script, mixed_note_script, encoded_csv_script
+    from agent_knowledge_fixture import KnowledgeFixture, CASE_IDS as KNOWLEDGE_CASES
+    import agent_knowledge_evidence as knowledge
 
 STATUS_VALUES = frozenset(("pass", "fail", "partial", "unsupported"))
 DEFAULT_CASES = ("readonly_review", "guarded_multi_file_edit", "long_validation_handoff")
@@ -822,6 +827,84 @@ def _generic_temporal_evidence_proven(case, summary, variant, evidence=None, fix
             and all(value is True for value in evidence["checks"].values()))
 
 
+class _KnowledgeCoordinator:
+    """Only the operator asks; actual captured first reads admit one update."""
+
+    def __init__(self, fixture, directory, capture_root):
+        self.fixture, self.directory, self.capture_root = fixture, directory, capture_root
+        self.error = None
+        self.advance = None
+        self._stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self.directory.mkdir(mode=0o700)
+        self.thread.start()
+
+    def _run(self):
+        while not self._stop.wait(0.1):
+            request = self.directory / "advance-request.json"
+            if not request.exists() or self.advance is not None or self.error is not None:
+                continue
+            try:
+                value = json.loads(temporal._read(request, 4096))
+                if not isinstance(value, dict) or set(value) != {"audit_db", "workflow_session_id", "trace_id"}:
+                    raise ValueError("invalid checkpoint request")
+                self.advance = knowledge.advance_after_read(capture_root=self.capture_root,
+                    audit_db=Path(value["audit_db"]), workflow_session_id=value["workflow_session_id"],
+                    fixture=self.fixture, trace_id=value["trace_id"])
+                target = self.directory / "advanced.json"
+                with target.open("x", encoding="utf-8") as handle:
+                    handle.write(_stable_json(self.advance))
+                target.chmod(0o600)
+            except (OSError, ValueError, TypeError, KeyError, sqlite3.Error) as error:
+                self.error = type(error).__name__
+                target = self.directory / "coordination-failed"
+                target.touch(mode=0o600, exist_ok=False)
+
+    def close(self):
+        self._stop.set()
+        self.thread.join(timeout=5)
+        if self.thread.is_alive():
+            raise BenchmarkError("knowledge fixture coordinator did not stop")
+
+
+def _knowledge_evidence_proven(case, summary, evidence, fixture_identity):
+    return (case.get("target") == knowledge.TARGET and case["id"] in KNOWLEDGE_CASES
+        and isinstance(summary, dict) and isinstance(evidence, dict)
+        and type(evidence.get("schema_version")) is int and evidence["schema_version"] == 1
+        and isinstance(fixture_identity, str) and re.fullmatch(r"[0-9a-f]{64}", fixture_identity) is not None
+        and evidence.get("fixture_identity") == fixture_identity
+        and evidence.get("case_id") == case["id"]
+        and evidence.get("case_fingerprint") == report._case_fingerprint(case)
+        and evidence.get("base_revision") == (summary.get("benchmark") or {}).get("base_revision")
+        and evidence.get("available") is True and evidence.get("passed") is True
+        and type(evidence.get("canonical_call_count")) is int and evidence["canonical_call_count"] > 1
+        and isinstance(evidence.get("checks"), dict) and set(evidence["checks"]) == knowledge.CHECK_NAMES
+        and all(value is True for value in evidence["checks"].values()))
+
+
+def _knowledge_host_identity(receipt, base_revision):
+    """Keep only pinned safe metadata; a digest does not attest a remote model."""
+    if not isinstance(base_revision, str) or re.fullmatch(r"[0-9a-f]{40}", base_revision) is None:
+        return None
+    digest, runtime = receipt.get("host_config_digest"), receipt.get("runtime_identity")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        return None
+    if not isinstance(runtime, dict) or set(runtime) != {"build", "binary_sha256"}:
+        return None
+    build, hashes = runtime["build"], runtime["binary_sha256"]
+    if (not isinstance(build, dict) or set(build) != {"version", "commit_prefix", "dirty", "built_at"}
+            or not isinstance(build["version"], str) or re.fullmatch(r"[\w.+-]{1,64}", build["version"]) is None
+            or not isinstance(build["commit_prefix"], str) or re.fullmatch(r"[0-9a-f]{12,40}", build["commit_prefix"]) is None
+            or not base_revision.startswith(build["commit_prefix"]) or build["dirty"] is not False
+            or type(build["built_at"]) is not int or build["built_at"] <= 0
+            or not isinstance(hashes, dict) or set(hashes) != {"webcodex-server", "webcodex-runner"}
+            or any(not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{64}", value) is None for value in hashes.values())):
+        return None
+    return {"model_config_digest": digest, "runtime_identity": runtime}
+
+
 def _run_sample(
     repo: Path,
     root: Path,
@@ -847,6 +930,7 @@ def _run_sample(
     surface: str | None = None
     worktree_added = False
     generic = case.get("target") == "generic_agent_disposable_fixture"
+    knowledge_case = case.get("target") == knowledge.TARGET
     coordinator = None
     fixture = None
     fixture_token = None
@@ -859,6 +943,14 @@ def _run_sample(
             fixture = GenericFixture(workspace, case["id"]).prepare()
             fixture_token = temporal.fixture_identity(workspace)
             coordinator = _GenericCoordinator(fixture, root / "receipts" / (label + "-coordination"))
+            coordinator.start()
+        elif knowledge_case:
+            fixture = KnowledgeFixture(workspace, case["id"]).prepare()
+            fixture_token = temporal.fixture_identity(workspace)
+            capture_root = root / "receipts" / (label + "-capture")
+            temporal.prepare_capture(capture_root, case["id"], base_revision,
+                report._case_fingerprint(case), fixture_root=workspace)
+            coordinator = _KnowledgeCoordinator(fixture, root / "receipts" / (label + "-coordination"), capture_root)
             coordinator.start()
         else:
             _worktree_add(repo, workspace, base_revision)
@@ -882,6 +974,10 @@ def _run_sample(
         )
         if host_cell_policy is not None:
             env["WEBCODEX_BENCH_HOST_CELL_POLICY"] = host_cell_policy
+        if knowledge_case:
+            env.update({"WEBCODEX_BENCH_TARGET": knowledge.TARGET,
+                "WEBCODEX_BENCH_FIXTURE_COORDINATION": str(coordinator.directory),
+                "WEBCODEX_BENCH_TEMPORAL_TRACE_ROOT": str(capture_root)})
         if generic:
             env.update({"WEBCODEX_BENCH_TARGET": "generic_agent_disposable_fixture",
                 "WEBCODEX_BENCH_FIXTURE_COORDINATION": str(coordinator.directory),
@@ -920,12 +1016,31 @@ def _run_sample(
             receipt["task_timing"] = {"started_at_ms": started, "ended_at_ms": ended}
         if coordinator is not None:
             coordinator.close()
-        head_changed = not generic and _head_revision(workspace) != base_revision
+        head_changed = not (generic or knowledge_case) and _head_revision(workspace) != base_revision
         oracle = fixture.oracle() if fixture is not None else _fixture_oracle(case, workspace, base_revision)
         if coordinator is not None and coordinator.error:
             oracle = {"available": True, "passed": False, "checks": [], "reason": "fixture coordination failed"}
-        if generic:
+        if generic or knowledge_case:
             oracle["fixture_identity"] = fixture_token
+        knowledge_evidence = None
+        host_identity = None
+        if knowledge_case:
+            if receipt["status"] == "unsupported":
+                return {"case_id": case["id"], "variant": variant, "surface": surface,
+                    "status": "unsupported", "driver_exit_code": completed.returncode,
+                    "fixture_oracle": oracle, "summary": None}
+            if any(not isinstance(receipt.get(key), str) or not receipt[key]
+                   for key in ("audit_db", "workflow_session_id")):
+                raise BenchmarkError("knowledge sample requires exact Audit and Session selectors")
+            knowledge_evidence = knowledge.verify(capture_root=capture_root,
+                audit_db=Path(receipt["audit_db"]), workflow_session_id=receipt["workflow_session_id"],
+                fixture=fixture, base_revision=base_revision, fingerprint=report._case_fingerprint(case),
+                answer=receipt.get("answer"), advance=coordinator.advance)
+            host_identity = _knowledge_host_identity(receipt, base_revision)
+            receipt = dict(receipt)
+            receipt["correctness"] = {"task_verdict": "pass" if knowledge_evidence["passed"] is True
+                else "fail" if knowledge_evidence["available"] else "unavailable",
+                "validation_verdict": "not_required"}
         annotation = _annotation(
             case,
             variant=variant,
@@ -946,7 +1061,7 @@ def _run_sample(
             workspace=workspace,
         )
         temporal_evidence = None
-        if capture_root is not None and summary is not None:
+        if capture_root is not None and summary is not None and generic:
             audit_path = Path(receipt["audit_db"])
             temporal_evidence = temporal.verify(
                 capture_root=capture_root, audit_db=audit_path if audit_path.is_absolute() else workspace / audit_path,
@@ -954,6 +1069,16 @@ def _run_sample(
                 base_revision=base_revision, fingerprint=report._case_fingerprint(case), fixture_root=workspace)
         effective_status = receipt["status"]
         reason_code: str | None = None
+        if knowledge_case:
+            if knowledge_evidence["available"] is not True:
+                effective_status = "partial"
+                reason_code = "knowledge_evidence_unavailable"
+            elif knowledge_evidence["passed"] is not True:
+                effective_status = "fail"
+                reason_code = "knowledge_case_failed"
+            elif host_identity is None:
+                effective_status = "partial"
+                reason_code = "knowledge_host_identity_unavailable"
         if head_changed:
             effective_status = "fail"
             reason_code = "workspace_head_changed"
@@ -983,7 +1108,7 @@ def _run_sample(
         if (
             summary is not None
             and effective_status == "pass"
-            and not _runtime_evidence_proven(summary, variant, surface)
+            and not knowledge_case and not _runtime_evidence_proven(summary, variant, surface)
         ):
             effective_status = "partial"
 
@@ -1006,6 +1131,9 @@ def _run_sample(
             contradicted = temporal_evidence is not None and temporal_evidence.get("available") is True and temporal_evidence.get("passed") is False
             effective_status = "fail" if contradicted else "partial"
             reason_code = "generic_temporal_semantics_failed" if contradicted else "generic_temporal_evidence_unavailable"
+        if knowledge_case and effective_status == "pass" and not _knowledge_evidence_proven(case, summary, knowledge_evidence, fixture_token):
+            effective_status = "partial"
+            reason_code = "knowledge_evidence_unavailable"
         return {
             "case_id": case["id"],
             "variant": variant,
@@ -1015,6 +1143,8 @@ def _run_sample(
             **({"reason_code": reason_code} if reason_code is not None else {}),
             "fixture_oracle": oracle,
             **({"temporal_evidence": temporal_evidence} if temporal_evidence is not None else {}),
+            **({"knowledge_evidence": knowledge_evidence} if knowledge_evidence is not None else {}),
+            **({"host_identity": host_identity} if knowledge_case else {}),
             "summary": summary,
         }
     except DriverPlatformUnsupported:
@@ -1051,16 +1181,17 @@ def _run_sample(
             "summary": None,
         }
     finally:
+        if coordinator is not None:
+            coordinator.close()
         if capture_root is not None:
             # Only the benchmark-created sibling of the fixture is removable;
             # receipt-supplied capture directories are never followed/deleted.
             shutil.rmtree(capture_root)
         if coordinator is not None:
-            coordinator.close()
             shutil.rmtree(coordinator.directory, ignore_errors=True)
         if worktree_added:
             _worktree_remove(repo, workspace)
-        elif generic and workspace.exists():
+        elif (generic or knowledge_case) and workspace.exists():
             shutil.rmtree(workspace)
 
 
@@ -1273,8 +1404,10 @@ def run_selection_benchmark(
         selected = [_case(report.load_case_manifest(case_manifest), case_id) for case_id in case_ids]
         if any(case.get("experiment") != "tool_selection" for case in selected):
             raise BenchmarkError("selection runner requires explicit tool_selection cases")
-        if any(case.get("target") != "webcodex_repository" for case in selected):
-            raise BenchmarkError("selection worktree runner supports only target=webcodex_repository")
+        if any(case.get("target") not in ("webcodex_repository", knowledge.TARGET) for case in selected):
+            raise BenchmarkError("selection runner target is unsupported")
+        if any(case.get("target") == knowledge.TARGET and case["id"] not in KNOWLEDGE_CASES for case in selected):
+            raise BenchmarkError("unknown knowledge fixture case")
         cases_out = []
         for case in selected:
             observations = [
@@ -1299,7 +1432,8 @@ def run_selection_benchmark(
             "status_counts": {status: statuses.count(status) for status in sorted(STATUS_VALUES)},
             "cases": cases_out,
             "notes": [
-                "each sample uses a fresh detached Git worktree and an unrestricted tool-selection prompt",
+                "repository cases use fresh detached worktrees; explicit knowledge cases use independent Git fixtures",
+                "tool selection follows each frozen case prompt; defaults retain unrestricted selection",
                 "native batching is an invocation shape, not another execution surface",
                 "scripted MCP calls are runtime tests, not real ChatGPT Web or model-choice evidence",
                 "no optimal sequence, winner, exact model-turn count, or speedup is inferred",
@@ -1355,6 +1489,7 @@ def _strict_passed(result, requested_cases, repetitions, manifest=None):
     candidate = result.get("candidate_variant", "code_mode")
     if candidate not in ("code_mode", "host_code_mode"):
         return False
+    knowledge_identities = set()
     for case in cases:
         definition = definitions[case["case_id"]]
         if selection:
@@ -1377,18 +1512,32 @@ def _strict_passed(result, requested_cases, repetitions, manifest=None):
                 return False
             if definition["validation"]["required"] and correctness.get("validation_verdict") != "pass":
                 return False
-            if not _runtime_evidence_proven(summary, sample.get("variant"), sample.get("surface")):
+            knowledge_case = definition.get("target") == knowledge.TARGET
+            if not knowledge_case and not _runtime_evidence_proven(summary, sample.get("variant"), sample.get("surface")):
                 return False
             oracle = sample.get("fixture_oracle") or {}
             if not isinstance(oracle, dict):
                 return False
-            if definition.get("target") == "generic_agent_disposable_fixture":
+            if knowledge_case:
+                identity = sample.get("host_identity")
+                if (not isinstance(identity, dict) or set(identity) != {"model_config_digest", "runtime_identity"}
+                        or _knowledge_host_identity({"host_config_digest": identity.get("model_config_digest"),
+                            "runtime_identity": identity.get("runtime_identity")},
+                            (summary.get("benchmark") or {}).get("base_revision", "")) is None):
+                    return False
+                knowledge_identities.add(_stable_json(identity))
+                if (sample.get("variant") != report.TOOL_SELECTION_VARIANT
+                        or sample.get("surface") != report.TOOL_SELECTION_VARIANT
+                        or oracle.get("available") is not True or oracle.get("passed") is not True
+                        or not _knowledge_evidence_proven(definition, summary, sample.get("knowledge_evidence"), oracle.get("fixture_identity"))):
+                    return False
+            elif definition.get("target") == "generic_agent_disposable_fixture":
                 if (oracle.get("available") is not True or oracle.get("passed") is not True
                     or not _generic_temporal_evidence_proven(definition, summary, sample.get("variant"), sample.get("temporal_evidence"), oracle.get("fixture_identity"))):
                     return False
             elif oracle.get("available") and oracle.get("passed") is not True:
                 return False
-    return True
+    return len(knowledge_identities) <= 1
 
 
 def _parser() -> argparse.ArgumentParser:
