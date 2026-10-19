@@ -167,7 +167,7 @@ Bug 报告需要提供哪些信息、自助修复流程、验证要求与 PR 说
 
 感谢 [LINUX DO](https://linux.do/) 社区提供友好的技术交流与开源分享环境。
 
-感谢 [AtomGit](https://atomgit.com/) 在国内托管 WebCodex 镜像，方便中国大陆用户访问项目并获取发布版本。
+感谢 [AtomGit](https://atomgit.com/yyjeqhc/webcodex) 在国内托管 WebCodex 镜像，方便中国大陆用户访问项目并获取发布版本。
 
 ## 许可证
 
