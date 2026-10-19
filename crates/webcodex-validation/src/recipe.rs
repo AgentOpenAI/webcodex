@@ -581,20 +581,29 @@ pub fn resolve_node_native_project_check(
     execution_root: &Path,
     cwd: Option<&str>,
 ) -> Result<ResolvedValidationRecipe, RecipeError> {
-    resolve_node_native_project_action(execution_root, cwd, SemanticCheck::Check)
+    resolve_node_native_project_action(execution_root, cwd, SemanticCheck::Check, None)
+}
+
+/// Explicit Node lint intent: do not silently run check/typecheck instead.
+pub fn resolve_node_native_project_lint(
+    execution_root: &Path,
+    cwd: Option<&str>,
+) -> Result<ResolvedValidationRecipe, RecipeError> {
+    resolve_node_native_project_action(execution_root, cwd, SemanticCheck::Check, Some("lint"))
 }
 
 pub fn resolve_node_native_project_test(
     execution_root: &Path,
     cwd: Option<&str>,
 ) -> Result<ResolvedValidationRecipe, RecipeError> {
-    resolve_node_native_project_action(execution_root, cwd, SemanticCheck::Test)
+    resolve_node_native_project_action(execution_root, cwd, SemanticCheck::Test, None)
 }
 
 fn resolve_node_native_project_action(
     execution_root: &Path,
     cwd: Option<&str>,
     action: SemanticCheck,
+    selected_script: Option<&'static str>,
 ) -> Result<ResolvedValidationRecipe, RecipeError> {
     const MAX_NODE_MANIFEST_BYTES: u64 = 1024 * 1024;
 
@@ -612,7 +621,15 @@ fn resolve_node_native_project_action(
         .get("scripts")
         .map(|value| value.as_object().ok_or_else(manifest_invalid))
         .transpose()?;
-    let selected = select_node_script(scripts, action)?;
+    let selected = match selected_script {
+        Some(script) => {
+            if !scripts.is_some_and(|scripts| scripts.contains_key(script)) {
+                return Err(check_unavailable());
+            }
+            script
+        }
+        None => select_node_script(scripts, action)?,
+    };
     if scripts
         .and_then(|scripts| scripts.get(selected))
         .and_then(Value::as_str)

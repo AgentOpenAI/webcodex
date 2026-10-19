@@ -1571,6 +1571,8 @@ pub enum ToolCall {
         /// Project-relative directory; nearest recipe root is resolved on Runner.
         #[serde(default)]
         cwd: Option<String>,
+        /// check uses Runner priority (check/typecheck/lint); lint selects only the
+        /// Node lint script, retaining check validation identity and effects.
         action: webcodex_core::project_validation::ProjectValidationAction,
         /// Omission means auto. Rust and Go are supported; Python supports test through pytest and
         /// check/format_check through project-local Ruff with explicit target-version.

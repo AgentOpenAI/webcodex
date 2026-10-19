@@ -2661,6 +2661,9 @@ async fn mcp_tools_list_stateless_serialized_size_budget() {
         marginal_cost
     }
 
+    // The explicit Node lint action adds a closed schema variant and provenance.
+    // Reserve a narrow 512-byte increment; retain the existing base ceilings.
+    const NODE_LINT_SCHEMA_ALLOWANCE_BYTES: usize = 512;
     for (label, auth, model_max_bytes) in [
         ("anonymous", None, 75_000),
         ("scoped", Some(&scoped), 78_000),
@@ -2718,6 +2721,7 @@ async fn mcp_tools_list_stateless_serialized_size_budget() {
                     0
                 };
                 let model_byte_budget = model_max_bytes
+                    + NODE_LINT_SCHEMA_ALLOWANCE_BYTES
                     + if app_enabled { 4_000 } else { 0 }
                     + experimental_code_mode_byte_budget
                     + project_format_marginal_byte_budget;

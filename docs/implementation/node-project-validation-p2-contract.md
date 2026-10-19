@@ -78,4 +78,15 @@ Official references: https://nodejs.org/download/release/v24.20.0/docs/api/cli.h
 
 ### Follow-up phases
 
+**Explicit lint action (issue #962 slice):** `project_validate(action=lint)` is a
+Node-only, Runner-planned validation intent. It requires an actual project-local
+`scripts.lint` string; unlike `action=check`, it never falls back to `check` or
+`typecheck`. The canonical execution is still `node --run lint`, with the
+existing `node:script:check` evidence, `check` kind, `Execute`/`JobRun` authority,
+manifest and prestart source fence, and same-Job outcome handling. It does not
+grant a no-write guarantee: project-authored lint scripts can have side effects.
+Missing or malformed `lint` fails before enqueueing a Job, and other language
+backends reject this intent. No user-supplied command names, arguments or
+package-manager selection are introduced.
+
 P2-A: bounded built-in Node project-script check only, after test boundary freeze. P2-B: separately prove `format_check` and package-manager-specific behavior, if necessary. P3: prove test-run counts for each Node test runner before enabling `action=test`. Offline/dependency/mutating-format/build-artifact extensions remain independent #962 follow-ups.

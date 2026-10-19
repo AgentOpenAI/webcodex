@@ -1025,12 +1025,16 @@ impl ShellJobValidationMetadata {
                         (
                             "node:script:check",
                             crate::project_validation::ProjectValidationAction::Check
+                                | crate::project_validation::ProjectValidationAction::Lint
                         ) | (
                             "node:tap:test" | "node:vitest:test" | "node:jest:test",
                             crate::project_validation::ProjectValidationAction::Test
                         )
                     ) || provenance.request.scope.is_some()
                         || provenance.request.dependency_policy.is_some()
+                        || (provenance.request.action
+                            == crate::project_validation::ProjectValidationAction::Lint
+                            && self.steps[0].args != ["--run", "lint"])
                         || (self.adapter == "node:script:check"
                             && provenance.request.test.is_some())))
                 || (self.require_tests, self.minimum_tests)

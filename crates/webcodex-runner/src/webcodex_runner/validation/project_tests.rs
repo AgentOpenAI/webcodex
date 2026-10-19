@@ -262,7 +262,7 @@ fn project_validation_runner_resolves_all_production_actions() {
 
         let semantic_check = match action {
             FormatCheck => webcodex_validation::SemanticCheck::Format,
-            Check => webcodex_validation::SemanticCheck::Check,
+            Check | Lint => webcodex_validation::SemanticCheck::Check,
             Test => webcodex_validation::SemanticCheck::Test,
         };
         let resolved = webcodex_validation::resolve_project_validation_recipe(
@@ -407,7 +407,9 @@ fn go_project_validation_identity_is_single_module_domain_separated() {
         let (_tmp, _root, registry, policy) = fixture("go.mod");
         let (plan, _) = project::plan(&policy, &registry, &request(action)).unwrap();
         let semantic = match action {
-            ProjectValidationAction::Check => webcodex_validation::SemanticCheck::Check,
+            ProjectValidationAction::Check | ProjectValidationAction::Lint => {
+                webcodex_validation::SemanticCheck::Check
+            }
             ProjectValidationAction::Test => webcodex_validation::SemanticCheck::Test,
             ProjectValidationAction::FormatCheck => unreachable!(),
         };
@@ -479,7 +481,7 @@ fn project_validation_package_scope_maps_through_canonical_operations() {
         assert_eq!(plan.provenance.request, req);
         let semantic = match action {
             FormatCheck => webcodex_validation::SemanticCheck::Format,
-            Check => webcodex_validation::SemanticCheck::Check,
+            Check | Lint => webcodex_validation::SemanticCheck::Check,
             Test => webcodex_validation::SemanticCheck::Test,
         };
         let operation = webcodex_validation::project_validation_operation(
@@ -825,7 +827,7 @@ fn start_project_validation_operation(
 
     let kind = match plan.provenance.request.action {
         ProjectValidationAction::FormatCheck => "format",
-        ProjectValidationAction::Check => "check",
+        ProjectValidationAction::Check | ProjectValidationAction::Lint => "check",
         ProjectValidationAction::Test => "test",
     };
     let metadata = ShellJobValidationMetadata {
@@ -1145,4 +1147,92 @@ fn project_validation_node_native_test_has_exact_plan_and_stale_source_fence() {
         ..Default::default()
     });
     assert!(project::plan(&policy, &registry, &filtered).is_err());
+}
+
+#[test]
+fn explicit_node_lint_plan_preserves_target_identity_and_stale_fence() {
+    use webcodex_core::runner_operation::{RunnerJobOperation, RunnerJobValidationOperation};
+    use webcodex_core::runner_protocol::{ShellJobContext, ShellJobValidationMetadata};
+    let (_tmp, root, registry, policy) = fixture("package.json");
+    fs::write(root.join("package.json"), r#"{"scripts":{"check":"node check.js","typecheck":"node types.js","lint":"node lint.js"}}"#).unwrap();
+    let check = request(ProjectValidationAction::Check);
+    let lint = request(ProjectValidationAction::Lint);
+    let (ordinary, _) = project::plan(&policy, &registry, &check).unwrap();
+    let (selected, cwd) = project::plan(&policy, &registry, &lint).unwrap();
+    assert_eq!(ordinary.step.args, ["--run", "check"]);
+    assert_eq!(selected.step.args, ["--run", "lint"]);
+    assert_ne!(ordinary.validation_target_id, selected.validation_target_id);
+    assert_eq!(selected.adapter, "node:script:check");
+    let metadata = ShellJobValidationMetadata {
+        project_validation: Some(selected.provenance.clone()),
+        tool: "project_validate".into(),
+        kind: "check".into(),
+        adapter: selected.adapter.clone(),
+        steps: vec![selected.step.clone()],
+        effective_timeout_secs: 60,
+        sync_wait_secs: 1,
+        validation_target_id: Some(selected.validation_target_id.clone()),
+        source_fence: None,
+        minimum_tests: None,
+        require_tests: None,
+        no_run: None,
+    };
+    assert!(metadata.is_valid());
+    let mut substituted = metadata.clone();
+    substituted.steps[0].args[1] = "check".into();
+    assert!(
+        !substituted.is_valid(),
+        "lint intent cannot admit a substituted check step"
+    );
+    let operation = RunnerJobOperation::StartValidation(RunnerJobValidationOperation {
+        job_id: "lint-job".into(),
+        cwd: Some(cwd.to_string_lossy().into_owned()),
+        steps: metadata.steps.clone(),
+        timeout_secs: 60,
+        context: ShellJobContext {
+            runtime_project_id: Some("agent:runner:demo".into()),
+            validation: Some(metadata),
+            workflow_session_id: None,
+            ssh_resource: None,
+            project_cwd: Some(".".into()),
+            cwd: Some(cwd.to_string_lossy().into_owned()),
+            purpose: Some("validation".into()),
+            shell: None,
+            command_preview: "node --run lint".into(),
+            validation_steps: vec!["check".into()],
+            structured_execution: None,
+        },
+    });
+    project::fence(&policy, &registry, &operation).unwrap();
+    fs::write(
+        root.join("package.json"),
+        r#"{"scripts":{"check":"node check.js","lint":"node altered.js"}}"#,
+    )
+    .unwrap();
+    assert!(project::fence(&policy, &registry, &operation)
+        .unwrap_err()
+        .contains("validation_plan_stale"));
+    fs::write(
+        root.join("package.json"),
+        r#"{"scripts":{"check":"node check.js"}}"#,
+    )
+    .unwrap();
+    assert!(
+        matches!(project::plan(&policy, &registry, &lint), Err(ProjectValidationPlanningResult::Unavailable { code, .. }) if code == "validation_check_unavailable")
+    );
+}
+
+#[test]
+fn explicit_lint_rejects_non_node_backend() {
+    let (_tmp, root, registry, policy) = fixture("Cargo.toml");
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname='demo'\nversion='0.1.0'\n",
+    )
+    .unwrap();
+    let mut req = request(ProjectValidationAction::Lint);
+    req.adapter = ProjectValidationAdapter::Rust;
+    assert!(
+        matches!(project::plan(&policy, &registry, &req), Err(ProjectValidationPlanningResult::Unavailable { code, .. }) if code == "validation_action_unsupported")
+    );
 }

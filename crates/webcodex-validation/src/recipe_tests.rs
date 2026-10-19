@@ -1384,3 +1384,52 @@ fn node_owned_inputs_reject_links_special_files_and_oversize_reads() {
     fs::write(&path, "input").unwrap();
     assert!(super::resolve_node_project_build(temp.path(), None).is_ok());
 }
+
+#[test]
+fn explicit_node_lint_never_falls_back_to_check_or_typecheck() {
+    let temp = tempfile::tempdir().unwrap();
+    write(
+        temp.path(),
+        "package.json",
+        r#"{"scripts":{"check":"node check.js","typecheck":"node types.js","lint":"node lint.js"}}"#,
+    );
+    let general = super::resolve_node_native_project_check(temp.path(), None).unwrap();
+    let lint = super::resolve_node_native_project_lint(temp.path(), None).unwrap();
+    assert_eq!(general.steps[0].args, ["--run", "check"]);
+    assert_eq!(lint.steps[0].args, ["--run", "lint"]);
+    assert_ne!(lint.invocation_digest, general.invocation_digest);
+    assert!(lint.steps[0].is_structured_node_check());
+    write(
+        temp.path(),
+        "package.json",
+        r#"{"scripts":{"check":"node check.js","typecheck":"node types.js"}}"#,
+    );
+    assert_eq!(
+        super::resolve_node_native_project_lint(temp.path(), None)
+            .unwrap_err()
+            .code,
+        "validation_check_unavailable"
+    );
+    write(
+        temp.path(),
+        "package.json",
+        r#"{"scripts":{"lint":null,"check":"node check.js"}}"#,
+    );
+    assert_eq!(
+        super::resolve_node_native_project_lint(temp.path(), None)
+            .unwrap_err()
+            .code,
+        "validation_manifest_invalid"
+    );
+    write(
+        temp.path(),
+        "package.json",
+        r#"{"scripts":{"lint":"   ","check":"node check.js"}}"#,
+    );
+    assert_eq!(
+        super::resolve_node_native_project_lint(temp.path(), None)
+            .unwrap_err()
+            .code,
+        "validation_manifest_invalid"
+    );
+}

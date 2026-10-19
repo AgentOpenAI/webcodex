@@ -1491,13 +1491,20 @@ fn project_validation_node_contract_advertises_bounded_test_and_execution_effect
     let specs = registered_tool_specs();
     let spec = spec_named(&specs, "project_validate");
     let description = spec.description.as_str();
-    assert!(description.contains("Node >=22.3: check via node --run"));
-    assert!(description.contains(
-        "native TAP test when scripts.test equals node --test or node --test --test-reporter=tap"
-    ));
-    assert!(description.contains("fixed Runner argv"));
-    assert!(description.contains("Node TAP rejects filters"));
-    assert!(description.contains("Project scripts may modify files or use network"));
+    // Assert behavioral guidance, not the exact prose of a compacted tool card.
+    for phrase in [
+        "Node >=22.3",
+        "lint selects only scripts.lint",
+        "node --run without pre/post",
+        "Node TAP test only for exact scripts.test=node --test",
+        "fixed installed CLI",
+        "project_validation_node_json_v1",
+        "not for Node",
+        "Project scripts may modify files or access network",
+        "No arbitrary executable, argv or shell",
+    ] {
+        assert!(description.contains(phrase), "missing guidance: {phrase}");
+    }
     assert_eq!(
         lookup_tool_definition("project_validate")
             .unwrap()
@@ -1508,7 +1515,7 @@ fn project_validation_node_contract_advertises_bounded_test_and_execution_effect
 
     let schema = &spec.input_schema;
     assert_eq!(schema["additionalProperties"], false);
-    for action in ["check", "test"] {
+    for action in ["check", "lint", "test"] {
         let value = json!({"project":"demo", "adapter":"node", "action":action});
         assert!(test_support::validate_schema_instance(&value, schema).is_ok());
         assert!(ToolCall::from_tool_name("project_validate", value).is_ok());

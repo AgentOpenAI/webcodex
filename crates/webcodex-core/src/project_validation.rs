@@ -12,6 +12,8 @@ pub use crate::project_operation::{
 pub enum ProjectValidationAction {
     FormatCheck,
     Check,
+    /// Run only a Runner-selected Node `lint` script; never fall back to check/typecheck.
+    Lint,
     Test,
 }
 impl ProjectValidationAction {
@@ -19,6 +21,7 @@ impl ProjectValidationAction {
         match self {
             Self::FormatCheck => "format",
             Self::Check => "check",
+            Self::Lint => "check",
             Self::Test => "test",
         }
     }
@@ -169,6 +172,8 @@ impl ProjectValidationProvenance {
         self.request.validate().is_ok()
             && validate_relative(&self.recipe_root).is_ok()
             && matches!(self.backend.as_str(), "rust" | "go" | "python" | "node")
+            // Explicit lint is Node-only, including retained provenance.
+            && (self.request.action != ProjectValidationAction::Lint || self.backend == "node")
             && [
                 &self.root_digest,
                 &self.manifest_digest,

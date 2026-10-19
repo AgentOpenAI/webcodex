@@ -535,7 +535,9 @@ impl ToolRuntime {
         }
         let semantic_action = match action {
             ProjectValidationAction::FormatCheck => webcodex_validation::SemanticCheck::Format,
-            ProjectValidationAction::Check => webcodex_validation::SemanticCheck::Check,
+            ProjectValidationAction::Check | ProjectValidationAction::Lint => {
+                webcodex_validation::SemanticCheck::Check
+            }
             ProjectValidationAction::Test => webcodex_validation::SemanticCheck::Test,
         };
         let Some(adapter) = webcodex_validation::validation_evidence_profile_for_project_step(

@@ -69,7 +69,9 @@ pub(super) async fn complete_project_validation_plan_request(
     assert_eq!(semantic.action, expected_action);
     let check = match semantic.action {
         ProjectValidationAction::FormatCheck => webcodex_validation::SemanticCheck::Format,
-        ProjectValidationAction::Check => webcodex_validation::SemanticCheck::Check,
+        ProjectValidationAction::Check | ProjectValidationAction::Lint => {
+            webcodex_validation::SemanticCheck::Check
+        }
         ProjectValidationAction::Test => webcodex_validation::SemanticCheck::Test,
     };
     let operation = webcodex_validation::project_validation_operation(

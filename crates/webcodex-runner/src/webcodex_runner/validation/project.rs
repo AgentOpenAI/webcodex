@@ -8,8 +8,8 @@ use webcodex_core::validation_identity::{
 };
 use webcodex_validation::{
     detect_validation_recipe, project_validation_operation, resolve_node_native_project_check,
-    resolve_node_native_project_test, resolve_project_validation_recipe,
-    validate_node_project_markers, RecipeId, SemanticCheck,
+    resolve_node_native_project_lint, resolve_node_native_project_test,
+    resolve_project_validation_recipe, validate_node_project_markers, RecipeId, SemanticCheck,
 };
 
 pub(crate) fn plan(
@@ -45,9 +45,15 @@ pub(crate) fn plan(
     }
     let backend = detect_validation_recipe(&root, request.cwd.as_deref(), hint)
         .map_err(|e| unavailable(e.code, None))?;
+    if request.action == ProjectValidationAction::Lint && backend != RecipeId::Node {
+        return Err(unavailable(
+            "validation_action_unsupported",
+            Some(backend.as_str()),
+        ));
+    }
     let action = match request.action {
         ProjectValidationAction::FormatCheck => SemanticCheck::Format,
-        ProjectValidationAction::Check => SemanticCheck::Check,
+        ProjectValidationAction::Check | ProjectValidationAction::Lint => SemanticCheck::Check,
         ProjectValidationAction::Test => SemanticCheck::Test,
     };
     let packages = request
@@ -71,7 +77,9 @@ pub(crate) fn plan(
         .map_err(|code| unavailable(code, Some(backend.as_str())))?;
     let profile = operation.compatibility_profile();
     let resolved = if backend == RecipeId::Node {
-        if action == SemanticCheck::Test {
+        if request.action == ProjectValidationAction::Lint {
+            resolve_node_native_project_lint(&root, request.cwd.as_deref())
+        } else if action == SemanticCheck::Test {
             resolve_node_native_project_test(&root, request.cwd.as_deref())
         } else {
             resolve_node_native_project_check(&root, request.cwd.as_deref())

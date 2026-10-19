@@ -38,8 +38,9 @@ pub use evidence::{
     validation_summary_from_events, CurrentValidationEvidenceProjection, ValidationEvent,
 };
 pub use recipe::{
-    detect_validation_recipe, resolve_node_native_project_check, resolve_node_native_project_test,
-    resolve_node_project_build, resolve_project_validation_recipe, resolve_validation_recipe,
+    detect_validation_recipe, resolve_node_native_project_check, resolve_node_native_project_lint,
+    resolve_node_native_project_test, resolve_node_project_build,
+    resolve_project_validation_recipe, resolve_validation_recipe,
     resolve_validation_recipe_with_packages, resolve_validation_recipe_with_project_policy,
     validate_node_project_markers, RecipeError, RecipeId, ResolvedValidationRecipe, SemanticCheck,
 };

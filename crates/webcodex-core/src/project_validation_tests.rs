@@ -94,6 +94,32 @@ fn project_node_check_step_identity_capability_and_metadata_are_closed() {
     .unwrap();
     assert_ne!(node, ruff);
 }
+
+#[test]
+fn explicit_lint_provenance_is_node_only() {
+    let mut provenance = ProjectValidationProvenance {
+        request: ProjectValidationRequest {
+            project_id: "demo".into(),
+            cwd: None,
+            action: ProjectValidationAction::Lint,
+            adapter: ProjectValidationAdapter::Auto,
+            scope: None,
+            dependency_policy: None,
+            test: None,
+        },
+        backend: "node".into(),
+        recipe_root: ".".into(),
+        root_digest: "a".repeat(64),
+        manifest_digest: "b".repeat(64),
+        invocation_digest: "c".repeat(64),
+    };
+    assert!(provenance.is_valid());
+    for backend in ["rust", "go", "python"] {
+        provenance.backend = backend.into();
+        assert!(!provenance.is_valid(), "unsupported lint backend {backend}");
+    }
+}
+
 #[test]
 fn project_validation_protocol_is_closed_declarative_and_roundtrips() {
     let input = ProjectValidationRequest {
