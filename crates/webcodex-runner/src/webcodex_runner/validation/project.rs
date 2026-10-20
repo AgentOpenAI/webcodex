@@ -9,7 +9,7 @@ use webcodex_core::validation_identity::{
 use webcodex_validation::{
     detect_validation_recipe, project_validation_operation, resolve_node_native_project_check,
     resolve_node_native_project_lint, resolve_node_native_project_test,
-    resolve_project_validation_recipe, validate_node_project_markers, RecipeId, SemanticCheck,
+    validate_node_project_markers, RecipeId, SemanticCheck,
 };
 
 pub(crate) fn plan(
@@ -45,6 +45,12 @@ pub(crate) fn plan(
     }
     let backend = detect_validation_recipe(&root, request.cwd.as_deref(), hint)
         .map_err(|e| unavailable(e.code, None))?;
+    if request.dependency_resolution_policy.is_some() && backend != RecipeId::Rust {
+        return Err(unavailable(
+            "dependency_resolution_policy_unsupported",
+            Some(backend.as_str()),
+        ));
+    }
     if request.action == ProjectValidationAction::Lint && backend != RecipeId::Node {
         return Err(unavailable(
             "validation_action_unsupported",
@@ -73,6 +79,9 @@ pub(crate) fn plan(
     // resolved recipe below is the sole authority for the executable step.
     let operation = project_validation_operation(backend.as_str(), action, packages, all_packages)
         .and_then(|operation| operation.with_dependency_policy(request.dependency_policy))
+        .and_then(|operation| {
+            operation.with_dependency_resolution_policy(request.dependency_resolution_policy)
+        })
         .and_then(|operation| operation.with_test_filter(filter))
         .map_err(|code| unavailable(code, Some(backend.as_str())))?;
     let profile = operation.compatibility_profile();
@@ -85,7 +94,7 @@ pub(crate) fn plan(
             resolve_node_native_project_check(&root, request.cwd.as_deref())
         }
     } else {
-        resolve_project_validation_recipe(
+        webcodex_validation::resolve_project_validation_recipe_with_resolution_policy(
             &root,
             request.cwd.as_deref(),
             hint,
@@ -97,6 +106,7 @@ pub(crate) fn plan(
                 .and_then(ProjectValidationScope::explicit_packages),
             all_packages,
             request.dependency_policy,
+            request.dependency_resolution_policy,
         )
     }
     .map_err(|e| unavailable(e.code, Some(backend.as_str())))?;

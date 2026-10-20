@@ -598,6 +598,13 @@ runner_capabilities! {
         #[serde(default, skip_serializing_if = "is_false")]
         pub project_dependency_policy_v1: bool = false;
     }
+    /// Explicit Cargo offline dependency resolution for project validation.
+    /// Older Runner versions reject requests requiring this additive contract.
+    ProjectDependencyResolutionOffline => RUNNER_CAPABILITY_PROJECT_DEPENDENCY_RESOLUTION_OFFLINE("project_dependency_resolution_offline_v1"),
+    v2_baseline = false {
+        #[serde(default, skip_serializing_if = "is_false")]
+        pub project_dependency_resolution_offline_v1: bool = false;
+    }
     /// Go project lifecycle gateways execute in Runner-owned single-module mode.
     /// The Runner forces GO111MODULE=on and GOWORK=off after shell/profile environment
     /// preparation so ambient module/workspace mode cannot change the planned graph.
@@ -2901,6 +2908,7 @@ mod envelope_tests {
                 project_format_v1: false,
                 project_format_go_v1: false,
                 project_dependency_policy_v1: false,
+                project_dependency_resolution_offline_v1: false,
                 project_go_single_module_v1: false,
                 project_validation_package_scope_v1: false,
                 project_all_packages_v1: false,
@@ -4797,6 +4805,8 @@ mod filter_canonical_tests {
             vec!["check"],
             vec!["check", "--all-targets"],
             vec!["check", "--locked"],
+            vec!["check", "--offline"],
+            vec!["check", "--locked", "--offline"],
             vec!["check", "--locked", "-p", "my-crate"],
             vec!["check", "--all-features"],
             vec!["check", "--no-default-features"],
@@ -4836,6 +4846,7 @@ mod filter_canonical_tests {
             vec!["check", "-p", "same-crate", "-p", "same-crate"],
             vec!["check", "--manifest-path", "/tmp/Cargo.toml"],
             vec!["check", "--locked", "--locked"],
+            vec!["check", "--offline", "--offline"],
             vec!["check", "--locked=true"],
             vec!["check", "--", "--all-targets"],
         ];
@@ -4872,6 +4883,8 @@ mod filter_canonical_tests {
             vec!["test", "focused"],
             vec!["test", "--all-targets"],
             vec!["test", "--locked"],
+            vec!["test", "--offline"],
+            vec!["test", "--locked", "--offline"],
             vec!["test", "focused", "--locked"],
             vec!["test", "--lib"],
             vec!["test", "--lib", "--all-targets", "--no-run"],
@@ -4901,6 +4914,7 @@ mod filter_canonical_tests {
             vec!["test", "--features", "col\tumn"],
             vec!["test", "--manifest-path", "/tmp/Cargo.toml"],
             vec!["test", "--locked", "--locked"],
+            vec!["test", "--offline", "--offline"],
             vec!["test", "--locked=true"],
             vec!["test", "--", "--all-targets"],
         ];

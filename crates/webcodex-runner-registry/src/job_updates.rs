@@ -922,6 +922,10 @@ impl RunnerRegistry {
             .as_ref()
             .and_then(|metadata| metadata.project_validation.as_ref())
             .is_some_and(|provenance| provenance.request.dependency_policy.is_some());
+        let project_resolution_offline_request = validation
+            .as_ref()
+            .and_then(|metadata| metadata.project_validation.as_ref())
+            .is_some_and(|provenance| provenance.request.dependency_resolution_policy.is_some());
         let project_go_single_module_request = matches!(
             structured_execution.as_ref(),
             Some(StructuredJobExecution::ProjectBuild(plan))
@@ -1472,6 +1476,18 @@ impl RunnerRegistry {
         {
             return Err(ExecutionAdmissionError::capability_unavailable(
                 capability_upgrade_error(&client_id, RunnerFeature::ProjectDependencyPolicy),
+            ));
+        }
+        if project_resolution_offline_request
+            && !runner
+                .runner_features
+                .supports(RunnerFeature::ProjectDependencyResolutionOffline)
+        {
+            return Err(ExecutionAdmissionError::capability_unavailable(
+                capability_upgrade_error(
+                    &client_id,
+                    RunnerFeature::ProjectDependencyResolutionOffline,
+                ),
             ));
         }
         if project_go_single_module_request

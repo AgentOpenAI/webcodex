@@ -99,6 +99,7 @@ edition = "2021"
             adapter: ProjectValidationAdapter::Auto,
             scope: None,
             dependency_policy: None,
+            dependency_resolution_policy: None,
             test: None,
         };
         let (plan, cwd) =
@@ -276,6 +277,7 @@ fn go_project_validation_overrides_ambient_gowork_but_direct_go_test_does_not() 
                 adapter: ProjectValidationAdapter::Go,
                 scope: None,
                 dependency_policy: None,
+                dependency_resolution_policy: None,
                 test: None,
             };
             let (plan, cwd) =
@@ -427,6 +429,7 @@ fn enqueue_python_validation_fixture(
         adapter: ProjectValidationAdapter::Python,
         scope: None,
         dependency_policy: None,
+        dependency_resolution_policy: None,
         test: filter.map(|filter| ProjectValidationTestOptions {
             filter: Some(filter.into()),
             ..Default::default()

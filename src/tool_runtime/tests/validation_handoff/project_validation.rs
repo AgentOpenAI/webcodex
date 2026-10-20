@@ -67,6 +67,7 @@ fn call_with_scope(
             all_packages: false,
         }),
         dependency_policy: None,
+        dependency_resolution_policy: None,
         test: None,
         timeout_secs: Some(60),
     }

@@ -48,6 +48,7 @@ fn project_node_check_step_identity_capability_and_metadata_are_closed() {
                     adapter: ProjectValidationAdapter::Node,
                     scope: None,
                     dependency_policy: None,
+                    dependency_resolution_policy: None,
                     test: None,
                 },
                 backend: "node".into(),
@@ -105,6 +106,7 @@ fn explicit_lint_provenance_is_node_only() {
             adapter: ProjectValidationAdapter::Auto,
             scope: None,
             dependency_policy: None,
+            dependency_resolution_policy: None,
             test: None,
         },
         backend: "node".into(),
@@ -129,6 +131,7 @@ fn project_validation_protocol_is_closed_declarative_and_roundtrips() {
         adapter: ProjectValidationAdapter::Auto,
         scope: None,
         dependency_policy: None,
+        dependency_resolution_policy: None,
         test: None,
     };
     let wire = RunnerRequest::from_operation(
@@ -323,6 +326,7 @@ fn project_validation_package_scope_roundtrips_and_is_bounded() {
             all_packages: false,
         }),
         dependency_policy: None,
+        dependency_resolution_policy: None,
         test: None,
     };
     assert!(input.validate().is_ok());
@@ -356,6 +360,7 @@ fn project_validation_locked_policy_rejects_format_check_without_silent_ignore()
         dependency_policy: Some(ProjectDependencyPolicy {
             mode: ProjectDependencyMode::Locked,
         }),
+        dependency_resolution_policy: None,
         test: None,
     };
     assert_eq!(
@@ -421,6 +426,7 @@ fn project_validation_python_argv_identity_and_metadata_are_closed() {
                 adapter: ProjectValidationAdapter::Python,
                 scope: None,
                 dependency_policy: None,
+                dependency_resolution_policy: None,
                 test: None,
             },
             backend: "python".into(),
@@ -507,6 +513,7 @@ fn project_ruff_step_identity_metadata_and_capability_are_independent() {
                     adapter: ProjectValidationAdapter::Python,
                     scope: None,
                     dependency_policy: None,
+                    dependency_resolution_policy: None,
                     test: None,
                 },
                 backend: "python".into(),
@@ -531,4 +538,39 @@ fn project_ruff_step_identity_metadata_and_capability_are_independent() {
         metadata.project_validation = None;
         assert!(!metadata.is_valid());
     }
+}
+
+#[test]
+fn dependency_resolution_offline_request_is_opt_in_and_closed() {
+    let mut request = ProjectValidationRequest {
+        project_id: "demo".into(),
+        cwd: None,
+        action: ProjectValidationAction::Check,
+        adapter: ProjectValidationAdapter::Rust,
+        scope: None,
+        dependency_policy: None,
+        dependency_resolution_policy: None,
+        test: None,
+    };
+    let original = serde_json::to_value(&request).unwrap();
+    assert!(original.get("dependency_resolution_policy").is_none());
+    request.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
+    assert_eq!(
+        serde_json::to_value(&request).unwrap()["dependency_resolution_policy"],
+        "offline"
+    );
+    assert!(request.validate().is_ok());
+    let mut invalid = serde_json::to_value(&request).unwrap();
+    invalid["dependency_resolution_policy"] = serde_json::json!("online");
+    assert!(serde_json::from_value::<ProjectValidationRequest>(invalid).is_err());
+    for action in [
+        ProjectValidationAction::Lint,
+        ProjectValidationAction::FormatCheck,
+    ] {
+        request.action = action;
+        assert!(request.validate().is_err());
+    }
+    request.action = ProjectValidationAction::Test;
+    request.adapter = ProjectValidationAdapter::Node;
+    assert!(request.validate().is_err());
 }

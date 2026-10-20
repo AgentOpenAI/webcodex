@@ -685,7 +685,11 @@ fn is_canonical_cargo_flags(
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
         let key = match *arg {
-            "--all-targets" | "--all-features" | "--no-default-features" | "--locked" => *arg,
+            "--all-targets"
+            | "--all-features"
+            | "--no-default-features"
+            | "--locked"
+            | "--offline" => *arg,
             "--workspace" if allow_project_workspace => *arg,
             "--lib" | "--no-run" if cargo_test => *arg,
             "--features" => {

@@ -1588,6 +1588,9 @@ pub enum ToolCall {
         /// repairing dependency selection state; it does not imply offline execution.
         #[serde(default)]
         dependency_policy: Option<webcodex_core::project_validation::ProjectDependencyPolicy>,
+        /// Cargo dependency fetching only (not an OS network sandbox).
+        #[serde(default)]
+        dependency_resolution_policy: Option<webcodex_core::project_validation::ProjectDependencyResolutionPolicy>,
         /// Test-only selector and count postconditions. Rust uses a libtest substring,
         /// Go uses native -run regexp, and Python pytest uses -k. Node TAP supports
         /// count requirements but rejects test filters. Omission keeps unfiltered positive-test proof by default.

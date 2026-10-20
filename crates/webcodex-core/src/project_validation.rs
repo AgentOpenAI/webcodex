@@ -62,6 +62,13 @@ pub struct ProjectValidationTestOptions {
     pub min_tests: Option<u64>,
 }
 
+/// Offline only affects Cargo dependency resolution/fetching; build scripts and
+/// executed tests may still access the network. It is not an OS sandbox.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectDependencyResolutionPolicy {
+    Offline,
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProjectValidationRequest {
@@ -74,6 +81,8 @@ pub struct ProjectValidationRequest {
     pub scope: Option<ProjectValidationScope>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dependency_policy: Option<ProjectDependencyPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependency_resolution_policy: Option<ProjectDependencyResolutionPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub test: Option<ProjectValidationTestOptions>,
 }
@@ -117,6 +126,17 @@ impl ProjectValidationRequest {
                     "invalid project validation package scope".to_string()
                 }
             })?;
+        }
+        if self.dependency_resolution_policy.is_some() {
+            if !matches!(
+                self.action,
+                ProjectValidationAction::Check | ProjectValidationAction::Test
+            ) || !matches!(
+                self.adapter,
+                ProjectValidationAdapter::Auto | ProjectValidationAdapter::Rust
+            ) {
+                return Err("dependency_resolution_policy requires Rust check or test".into());
+            }
         }
         if self.dependency_policy.is_some() && self.action == ProjectValidationAction::FormatCheck {
             return Err("dependency_policy requires project_validate action=check or test".into());
@@ -174,6 +194,7 @@ impl ProjectValidationProvenance {
             && matches!(self.backend.as_str(), "rust" | "go" | "python" | "node")
             // Explicit lint is Node-only, including retained provenance.
             && (self.request.action != ProjectValidationAction::Lint || self.backend == "node")
+            && (self.request.dependency_resolution_policy.is_none() || self.backend == "rust")
             && [
                 &self.root_digest,
                 &self.manifest_digest,

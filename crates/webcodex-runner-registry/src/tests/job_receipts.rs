@@ -811,6 +811,7 @@ async fn receipts_validation_provenance_is_restored_only_by_same_instance_invent
                         adapter: ProjectValidationAdapter::Auto,
                         scope: None,
                         dependency_policy: None,
+                        dependency_resolution_policy: None,
                         test: None,
                     },
                     backend: "node".into(),

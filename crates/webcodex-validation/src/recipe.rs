@@ -174,10 +174,34 @@ pub fn resolve_project_validation_recipe(
     all_packages: bool,
     dependency_policy: Option<webcodex_core::project_validation::ProjectDependencyPolicy>,
 ) -> Result<ResolvedValidationRecipe, RecipeError> {
+    resolve_project_validation_recipe_with_resolution_policy(
+        execution_root,
+        cwd,
+        explicit_recipe,
+        checks,
+        test_filter,
+        package_scope,
+        all_packages,
+        dependency_policy,
+        None,
+    )
+}
+
+pub fn resolve_project_validation_recipe_with_resolution_policy(
+    execution_root: &Path,
+    cwd: Option<&str>,
+    explicit_recipe: Option<RecipeId>,
+    checks: &[SemanticCheck],
+    test_filter: Option<&str>,
+    package_scope: Option<&[String]>,
+    all_packages: bool,
+    dependency_policy: Option<webcodex_core::project_validation::ProjectDependencyPolicy>,
+    resolution_policy: Option<webcodex_core::project_validation::ProjectDependencyResolutionPolicy>,
+) -> Result<ResolvedValidationRecipe, RecipeError> {
     let resolved = resolve_project_recipe_root(execution_root, cwd, explicit_recipe)
         .map_err(map_project_recipe_error)?;
     if resolved.recipe != RecipeId::Python {
-        return resolve_validation_recipe_with_project_policy(
+        return resolve_validation_recipe_with_policies(
             execution_root,
             cwd,
             explicit_recipe,
@@ -186,7 +210,11 @@ pub fn resolve_project_validation_recipe(
             package_scope,
             all_packages,
             dependency_policy,
+            resolution_policy,
         );
+    }
+    if resolution_policy.is_some() {
+        return Err(RecipeError::new("dependency_resolution_policy_unsupported"));
     }
     let ruff_digest = if checks.iter().any(|check| *check != SemanticCheck::Test) {
         Some(project_ruff_manifest_digest(
@@ -422,10 +450,37 @@ pub fn resolve_validation_recipe_with_project_policy(
     all_packages: bool,
     dependency_policy: Option<webcodex_core::project_validation::ProjectDependencyPolicy>,
 ) -> Result<ResolvedValidationRecipe, RecipeError> {
+    resolve_validation_recipe_with_policies(
+        execution_root,
+        cwd,
+        explicit_recipe,
+        checks,
+        test_filter,
+        package_scope,
+        all_packages,
+        dependency_policy,
+        None,
+    )
+}
+
+pub fn resolve_validation_recipe_with_policies(
+    execution_root: &Path,
+    cwd: Option<&str>,
+    explicit_recipe: Option<RecipeId>,
+    checks: &[SemanticCheck],
+    test_filter: Option<&str>,
+    package_scope: Option<&[String]>,
+    all_packages: bool,
+    dependency_policy: Option<webcodex_core::project_validation::ProjectDependencyPolicy>,
+    resolution_policy: Option<webcodex_core::project_validation::ProjectDependencyResolutionPolicy>,
+) -> Result<ResolvedValidationRecipe, RecipeError> {
     let resolved_root = resolve_project_recipe_root(execution_root, cwd, explicit_recipe)
         .map_err(map_project_recipe_error)?;
     let root = &resolved_root.execution_root;
     let recipe = resolved_root.recipe;
+    if resolution_policy.is_some() && recipe != RecipeId::Rust {
+        return Err(RecipeError::new("dependency_resolution_policy_unsupported"));
+    }
     let recipe_root = &resolved_root.absolute_root;
     if (package_scope.is_some() || all_packages) && !matches!(recipe, RecipeId::Rust | RecipeId::Go)
     {
@@ -460,6 +515,7 @@ pub fn resolve_validation_recipe_with_project_policy(
                     package_scope,
                     all_packages,
                     dependency_policy,
+                    resolution_policy,
                 )?;
                 let manifest_digest = if recipe == RecipeId::Rust && all_packages {
                     digest_project_cargo_all_packages_provenance(&resolved_root)
@@ -530,6 +586,7 @@ fn canonical_adapter_steps(
     package_scope: Option<&[String]>,
     all_packages: bool,
     dependency_policy: Option<webcodex_core::project_validation::ProjectDependencyPolicy>,
+    resolution_policy: Option<webcodex_core::project_validation::ProjectDependencyResolutionPolicy>,
 ) -> Result<Vec<ShellJobValidationStep>, RecipeError> {
     let mut steps = Vec::with_capacity(checks.len());
     for check in checks {
@@ -548,6 +605,7 @@ fn canonical_adapter_steps(
         })?;
         let operation = operation
             .with_dependency_policy(dependency_policy)
+            .and_then(|operation| operation.with_dependency_resolution_policy(resolution_policy))
             .map_err(RecipeError::new)?
             .with_test_filter(
                 (*check == SemanticCheck::Test)

@@ -44,6 +44,7 @@ fn validation_request(scope: ProjectValidationScope) -> ProjectValidationRequest
         adapter: ProjectValidationAdapter::Auto,
         scope: Some(scope),
         dependency_policy: None,
+        dependency_resolution_policy: None,
         test: None,
     }
 }

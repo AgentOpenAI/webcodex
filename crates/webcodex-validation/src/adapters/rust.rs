@@ -197,6 +197,9 @@ fn cargo_check_plan(options: ValidationCommandOptions) -> Result<ReadOnlyValidat
     {
         args.push(ValidationPlanArg::Literal("--locked"));
     }
+    if options.dependency_resolution_policy.is_some() {
+        args.push(ValidationPlanArg::Literal("--offline"));
+    }
     if options.all_targets.unwrap_or(true) {
         args.push(ValidationPlanArg::Literal("--all-targets"));
     }
@@ -241,6 +244,9 @@ fn cargo_test_plan(options: ValidationCommandOptions) -> Result<ReadOnlyValidati
         == Some(webcodex_core::project_validation::ProjectDependencyMode::Locked)
     {
         args.push(ValidationPlanArg::Literal("--locked"));
+    }
+    if options.dependency_resolution_policy.is_some() {
+        args.push(ValidationPlanArg::Literal("--offline"));
     }
     if options.lib.unwrap_or(false) {
         args.push(ValidationPlanArg::Literal("--lib"));

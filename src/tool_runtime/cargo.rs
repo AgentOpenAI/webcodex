@@ -389,6 +389,7 @@ impl ToolRuntime {
                     packages,
                     all_packages: false,
                     dependency_mode: None,
+                    dependency_resolution_policy: None,
                 },
             )),
             ValidationRunRequest {
@@ -525,6 +526,7 @@ impl ToolRuntime {
                     all_packages: false,
                     no_run,
                     dependency_mode: None,
+                    dependency_resolution_policy: None,
                 },
             )),
             ValidationRunRequest {

@@ -300,6 +300,7 @@ fn cargo_output_schema(tool_name: &str) -> Value {
             "validation_scope_unavailable",
             "validation_action_unsupported",
             "dependency_policy_unsupported",
+            "dependency_resolution_policy_unsupported",
             "test_filter_unsupported",
             "validation_check_unavailable",
             "structured_test_report_unavailable"

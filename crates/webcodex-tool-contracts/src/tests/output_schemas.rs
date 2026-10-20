@@ -3688,6 +3688,7 @@ fn project_validate_schema_admits_canonical_planning_and_replan_failures() {
         "validation_scope_unavailable",
         "validation_action_unsupported",
         "dependency_policy_unsupported",
+        "dependency_resolution_policy_unsupported",
         "test_filter_unsupported",
         "validation_check_unavailable",
     ] {

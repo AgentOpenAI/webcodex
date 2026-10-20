@@ -85,6 +85,7 @@ fn semantic_read_only_operations_preserve_legacy_leaf_plans_and_identity_profile
                     packages: Some(vec!["package-a".to_string(), "package-b".to_string()]),
                     all_packages: false,
                     dependency_mode: None,
+                    dependency_resolution_policy: None,
                 },
             )),
             "cargo_check",
@@ -111,6 +112,7 @@ fn semantic_read_only_operations_preserve_legacy_leaf_plans_and_identity_profile
                     all_packages: false,
                     no_run: Some(true),
                     dependency_mode: None,
+                    dependency_resolution_policy: None,
                 },
             )),
             "cargo_test",
@@ -368,6 +370,72 @@ fn locked_project_dependency_policy_maps_to_native_validation_argv_and_identity(
         format.with_dependency_policy(policy).unwrap_err(),
         "dependency_policy_unsupported"
     );
+}
+
+#[test]
+fn rust_dependency_offline_policy_is_typed_and_has_a_distinct_identity() {
+    use webcodex_core::project_validation::{
+        ProjectDependencyMode, ProjectDependencyPolicy, ProjectDependencyResolutionPolicy,
+    };
+    let offline = Some(ProjectDependencyResolutionPolicy::Offline);
+    for (check, plain, offline_argv, locked_argv) in [
+        (
+            SemanticCheck::Check,
+            vec!["check", "--all-targets"],
+            vec!["check", "--offline", "--all-targets"],
+            vec!["check", "--locked", "--offline", "--all-targets"],
+        ),
+        (
+            SemanticCheck::Test,
+            vec!["test"],
+            vec!["test", "--offline"],
+            vec!["test", "--locked", "--offline"],
+        ),
+    ] {
+        let base = project_validation_operation("rust", check, None, false).unwrap();
+        let base_id = base.validation_target_id(Some(".")).unwrap();
+        assert_eq!(
+            base.build_readonly_plan().unwrap().structured_step.args,
+            plain
+        );
+        let selected = base
+            .clone()
+            .with_dependency_resolution_policy(offline)
+            .unwrap();
+        let plan = selected.build_readonly_plan().unwrap();
+        assert_eq!(plan.structured_step.args, offline_argv);
+        assert!(plan.structured_step.is_canonical());
+        assert_ne!(selected.validation_target_id(Some(".")).unwrap(), base_id);
+        let combined = base
+            .with_dependency_policy(Some(ProjectDependencyPolicy {
+                mode: ProjectDependencyMode::Locked,
+            }))
+            .unwrap()
+            .with_dependency_resolution_policy(offline)
+            .unwrap();
+        assert_eq!(
+            combined.build_readonly_plan().unwrap().structured_step.args,
+            locked_argv
+        );
+        assert_ne!(
+            combined.validation_target_id(Some(".")).unwrap(),
+            selected.validation_target_id(Some(".")).unwrap()
+        );
+    }
+    for (backend, action) in [
+        ("go", SemanticCheck::Check),
+        ("python", SemanticCheck::Test),
+        ("node", SemanticCheck::Check),
+        ("rust", SemanticCheck::Format),
+    ] {
+        let operation = project_validation_operation(backend, action, None, false).unwrap();
+        assert_eq!(
+            operation
+                .with_dependency_resolution_policy(offline)
+                .unwrap_err(),
+            "dependency_resolution_policy_unsupported"
+        );
+    }
 }
 
 #[test]

@@ -2925,6 +2925,7 @@ impl RunnerRegistry {
             webcodex_core::project_validation::ProjectValidationScope::selects_all_packages,
         );
         let requires_dependency_policy = payload.dependency_policy.is_some();
+        let requires_resolution_offline = payload.dependency_resolution_policy.is_some();
         let requires_test_options = payload.test.is_some();
         let request_id = next_request_id();
         let (tx, rx) = oneshot::channel();
@@ -2975,6 +2976,16 @@ impl RunnerRegistry {
             return Err(capability_upgrade_error(
                 &client_id,
                 RunnerFeature::ProjectDependencyPolicy,
+            ));
+        }
+        if requires_resolution_offline
+            && !runner
+                .runner_features
+                .supports(RunnerFeature::ProjectDependencyResolutionOffline)
+        {
+            return Err(capability_upgrade_error(
+                &client_id,
+                RunnerFeature::ProjectDependencyResolutionOffline,
             ));
         }
         if requires_test_options

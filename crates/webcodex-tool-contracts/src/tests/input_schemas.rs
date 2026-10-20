@@ -1487,6 +1487,30 @@ fn project_validation_python_adapter_is_public_without_a_pytest_tool() {
 }
 
 #[test]
+fn project_validation_offline_dependency_policy_has_public_typed_contract() {
+    let specs = registered_tool_specs();
+    let spec = spec_named(&specs, "project_validate");
+    assert!(spec.description.contains("dependency_resolution_policy"));
+    assert!(spec
+        .description
+        .contains("build scripts/tests may use network"));
+    let schema = &spec.input_schema;
+    let valid = json!({
+        "project": "demo",
+        "action": "check",
+        "adapter": "rust",
+        "dependency_resolution_policy": "offline",
+        "dependency_policy": {"mode": "locked"}
+    });
+    test_support::validate_schema_instance(&valid, schema).unwrap();
+    assert!(ToolCall::from_tool_name("project_validate", valid.clone()).is_ok());
+    let mut invalid = valid;
+    invalid["dependency_resolution_policy"] = json!("online");
+    assert!(test_support::validate_schema_instance(&invalid, schema).is_err());
+    assert!(ToolCall::from_tool_name("project_validate", invalid).is_err());
+}
+
+#[test]
 fn project_validation_node_contract_advertises_bounded_test_and_execution_effects() {
     let specs = registered_tool_specs();
     let spec = spec_named(&specs, "project_validate");

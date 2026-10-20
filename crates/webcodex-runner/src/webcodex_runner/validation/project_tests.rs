@@ -31,6 +31,7 @@ fn request(action: ProjectValidationAction) -> ProjectValidationRequest {
         adapter: ProjectValidationAdapter::Auto,
         scope: None,
         dependency_policy: None,
+        dependency_resolution_policy: None,
         test: None,
     }
 }
@@ -1235,4 +1236,26 @@ fn explicit_lint_rejects_non_node_backend() {
     assert!(
         matches!(project::plan(&policy, &registry, &req), Err(ProjectValidationPlanningResult::Unavailable { code, .. }) if code == "validation_action_unsupported")
     );
+}
+
+#[test]
+fn rust_dependency_offline_plan_is_runner_owned_and_fenced() {
+    let (_tmp, _root, registry, policy) = fixture("Cargo.toml");
+    let mut plain = request(ProjectValidationAction::Check);
+    plain.adapter = ProjectValidationAdapter::Rust;
+    let (original, _) = project::plan(&policy, &registry, &plain).unwrap();
+    let mut offline = plain.clone();
+    offline.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
+    let (selected, _) = project::plan(&policy, &registry, &offline).unwrap();
+    assert_eq!(selected.step.args, ["check", "--offline", "--all-targets"]);
+    assert_ne!(selected.validation_target_id, original.validation_target_id);
+    assert_ne!(
+        selected.provenance.invocation_digest,
+        original.provenance.invocation_digest
+    );
+    assert!(selected.step.is_canonical());
+    assert!(selected.provenance.is_valid());
+    let mut unsupported = offline.clone();
+    unsupported.action = ProjectValidationAction::FormatCheck;
+    assert!(project::plan(&policy, &registry, &unsupported).is_err());
 }

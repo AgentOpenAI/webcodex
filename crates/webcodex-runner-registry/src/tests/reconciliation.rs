@@ -193,6 +193,7 @@ fn go_project_validation_start_metadata() -> ShellJobStartMetadata {
                     adapter: ProjectValidationAdapter::Go,
                     scope: None,
                     dependency_policy: None,
+                    dependency_resolution_policy: None,
                     test: None,
                 },
                 backend: "go".into(),
@@ -694,6 +695,7 @@ async fn project_test_options_are_fenced_again_at_job_admission() {
         validation.project_validation = Some(ProjectValidationProvenance {
             request:ProjectValidationRequest {project_id:"demo".into(),cwd:None,action:ProjectValidationAction::Test,
                 adapter:ProjectValidationAdapter::Rust,scope:None,dependency_policy:None,
+                dependency_resolution_policy: None,
                 test:Some(ProjectValidationTestOptions {filter:Some("focused".into()),min_tests:Some(3),require_tests:None})},
             backend:"rust".into(),recipe_root:".".into(),root_digest:"a".repeat(64),manifest_digest:"b".repeat(64),invocation_digest:"c".repeat(64),
         });
@@ -3921,6 +3923,7 @@ async fn project_validation_python_pytest_capability_rechecked_at_job_admission(
                 adapter: ProjectValidationAdapter::Auto,
                 scope: None,
                 dependency_policy: None,
+                dependency_resolution_policy: None,
                 test: None,
             },
             backend: "python".into(),
@@ -3965,7 +3968,7 @@ async fn project_validation_ruff_admission_requires_ruff_capability_even_with_py
             validation.kind = action.kind().into();
             validation.steps = vec![ShellJobValidationStep::python_ruff(action.kind()).unwrap()];
             validation.project_validation = Some(ProjectValidationProvenance {
-                request: ProjectValidationRequest { project_id: "demo".into(), cwd: None, action, adapter: ProjectValidationAdapter::Auto, scope: None, dependency_policy: None, test: None },
+                request: ProjectValidationRequest { project_id: "demo".into(), cwd: None, action, adapter: ProjectValidationAdapter::Auto, scope: None, dependency_policy: None, dependency_resolution_policy: None, test: None },
                 backend: "python".into(), recipe_root: ".".into(), root_digest: "a".repeat(64), manifest_digest: "b".repeat(64), invocation_digest: "c".repeat(64),
             });
             assert!(validation.is_valid());
@@ -4008,6 +4011,7 @@ async fn project_validation_node_native_capability_rechecked_at_job_admission() 
                 adapter: ProjectValidationAdapter::Auto,
                 scope: None,
                 dependency_policy: None,
+                dependency_resolution_policy: None,
                 test: None,
             },
             backend: "node".into(),
@@ -4055,6 +4059,7 @@ async fn project_validation_node_json_capability_rechecked_at_job_admission() {
                 adapter: ProjectValidationAdapter::Auto,
                 scope: None,
                 dependency_policy: None,
+                dependency_resolution_policy: None,
                 test: None,
             },
             backend: "node".into(),

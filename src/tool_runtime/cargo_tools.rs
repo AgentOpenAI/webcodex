@@ -22,6 +22,7 @@ impl ToolRuntime {
                 adapter,
                 scope,
                 dependency_policy,
+                dependency_resolution_policy,
                 test,
                 timeout_secs,
             } => {
@@ -33,6 +34,7 @@ impl ToolRuntime {
                     adapter,
                     scope,
                     dependency_policy,
+                    dependency_resolution_policy,
                     test,
                     timeout_secs,
                     structured_handoff_max_secs,

@@ -285,6 +285,7 @@ pub fn structured_validation_target_identity(
 pub enum StructuredValidationExecutionContext {
     GoProjectSingleModuleV1,
     ProjectDependencyLockedV1,
+    ProjectDependencyOfflineV1,
     ProjectAllPackagesV1,
 }
 
@@ -293,6 +294,7 @@ impl StructuredValidationExecutionContext {
         match self {
             Self::GoProjectSingleModuleV1 => "go_project_single_module_v1",
             Self::ProjectDependencyLockedV1 => "project_dependency_locked_v1",
+            Self::ProjectDependencyOfflineV1 => "project_dependency_offline_v1",
             Self::ProjectAllPackagesV1 => "project_all_packages_v1",
         }
     }

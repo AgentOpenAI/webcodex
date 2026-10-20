@@ -2977,6 +2977,7 @@ mod tests {
                         all_packages: true,
                     }),
                     dependency_policy: None,
+                    dependency_resolution_policy: None,
                     test: None,
                 },
                 backend: "rust".into(),

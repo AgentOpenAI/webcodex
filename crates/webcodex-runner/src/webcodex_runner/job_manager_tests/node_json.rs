@@ -78,6 +78,7 @@ fn node_json_real_framework_jobs_retain_counts_and_reject_interrupted_reports() 
                     adapter: ProjectValidationAdapter::Node,
                     scope: None,
                     dependency_policy: None,
+                    dependency_resolution_policy: None,
                     test: None,
                 };
                 let (plan, cwd) =

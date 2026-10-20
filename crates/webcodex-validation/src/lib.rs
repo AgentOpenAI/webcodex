@@ -40,9 +40,10 @@ pub use evidence::{
 pub use recipe::{
     detect_validation_recipe, resolve_node_native_project_check, resolve_node_native_project_lint,
     resolve_node_native_project_test, resolve_node_project_build,
-    resolve_project_validation_recipe, resolve_validation_recipe,
-    resolve_validation_recipe_with_packages, resolve_validation_recipe_with_project_policy,
-    validate_node_project_markers, RecipeError, RecipeId, ResolvedValidationRecipe, SemanticCheck,
+    resolve_project_validation_recipe, resolve_project_validation_recipe_with_resolution_policy,
+    resolve_validation_recipe, resolve_validation_recipe_with_packages,
+    resolve_validation_recipe_with_project_policy, validate_node_project_markers, RecipeError,
+    RecipeId, ResolvedValidationRecipe, SemanticCheck,
 };
 pub use webcodex_core::cargo_test_count::{
     parse_cargo_test_run_metadata, CargoTestRunMetadata, CargoTestRunMetadataAccumulator,

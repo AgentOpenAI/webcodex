@@ -5,7 +5,9 @@ mod node;
 mod python;
 mod rust;
 
-use webcodex_core::project_validation::{ProjectDependencyMode, ProjectDependencyPolicy};
+use webcodex_core::project_validation::{
+    ProjectDependencyMode, ProjectDependencyPolicy, ProjectDependencyResolutionPolicy,
+};
 use webcodex_core::runner_protocol::ShellJobValidationStep;
 use webcodex_core::shell_quote::shell_escape_simple;
 use webcodex_core::validation_evidence::ValidationDiagnostics;
@@ -40,6 +42,7 @@ pub struct ValidationCommandOptions {
     /// reject this Go-specific option rather than silently ignoring it.
     pub go_packages: Option<Vec<String>>,
     pub dependency_mode: Option<ProjectDependencyMode>,
+    pub dependency_resolution_policy: Option<ProjectDependencyResolutionPolicy>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -52,6 +55,7 @@ pub struct CargoCheckOptions {
     pub packages: Option<Vec<String>>,
     pub all_packages: bool,
     pub dependency_mode: Option<ProjectDependencyMode>,
+    pub dependency_resolution_policy: Option<ProjectDependencyResolutionPolicy>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -67,6 +71,7 @@ pub struct CargoTestOptions {
     pub all_packages: bool,
     pub no_run: Option<bool>,
     pub dependency_mode: Option<ProjectDependencyMode>,
+    pub dependency_resolution_policy: Option<ProjectDependencyResolutionPolicy>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -174,6 +179,37 @@ impl ReadOnlyValidationOperation {
             }
         }
         Ok(self)
+    }
+
+    pub fn with_dependency_resolution_policy(
+        mut self,
+        policy: Option<ProjectDependencyResolutionPolicy>,
+    ) -> Result<Self, &'static str> {
+        let Some(policy) = policy else {
+            return Ok(self);
+        };
+        match &mut self {
+            Self::Cargo(CargoReadOnlyValidationOperation::Check(options)) => {
+                options.dependency_resolution_policy = Some(policy)
+            }
+            Self::Cargo(CargoReadOnlyValidationOperation::Test(options)) => {
+                options.dependency_resolution_policy = Some(policy)
+            }
+            _ => return Err("dependency_resolution_policy_unsupported"),
+        }
+        Ok(self)
+    }
+
+    fn dependency_resolution_policy(&self) -> Option<ProjectDependencyResolutionPolicy> {
+        match self {
+            Self::Cargo(CargoReadOnlyValidationOperation::Check(options)) => {
+                options.dependency_resolution_policy
+            }
+            Self::Cargo(CargoReadOnlyValidationOperation::Test(options)) => {
+                options.dependency_resolution_policy
+            }
+            _ => None,
+        }
     }
 
     fn dependency_mode(&self) -> Option<ProjectDependencyMode> {
@@ -362,6 +398,11 @@ impl ReadOnlyValidationOperation {
                     webcodex_core::validation_identity::StructuredValidationExecutionContext::ProjectDependencyLockedV1,
                 )?;
         }
+        if self.dependency_resolution_policy() == Some(ProjectDependencyResolutionPolicy::Offline) {
+            identity = webcodex_core::validation_identity::contextualize_structured_validation_target_identity(
+                &identity, webcodex_core::validation_identity::StructuredValidationExecutionContext::ProjectDependencyOfflineV1,
+            )?;
+        }
         if matches!(self, Self::Cargo(_)) && self.selects_all_packages() {
             identity =
                 webcodex_core::validation_identity::contextualize_structured_validation_target_identity(
@@ -445,6 +486,7 @@ impl From<CargoCheckOptions> for ValidationCommandOptions {
             cargo_packages: options.packages,
             all_packages: options.all_packages,
             dependency_mode: options.dependency_mode,
+            dependency_resolution_policy: options.dependency_resolution_policy,
             ..Self::default()
         }
     }
@@ -464,6 +506,7 @@ impl From<CargoTestOptions> for ValidationCommandOptions {
             all_packages: options.all_packages,
             no_run: options.no_run,
             dependency_mode: options.dependency_mode,
+            dependency_resolution_policy: options.dependency_resolution_policy,
             ..Self::default()
         }
     }
