@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
-import { Alert, Button, Checkbox, NativeSelect, PasswordInput, TextInput } from "@mantine/core";
+import { Alert, Button, Checkbox, Select, PasswordInput, TextInput } from "@mantine/core";
 import { desktopApi } from "../../lib/desktop-api";
 import type { DesktopState } from "../../models/topology";
 import type { TunnelConnection, TunnelHostMode, TunnelProfileRequest, TunnelProvider } from "../../models/connections-tools";
@@ -68,7 +68,7 @@ export function ConnectionEditor({ profile, persistentLocal, onState, onClose, o
   const selectedOwner = hostMode === "embedded" ? c("runWithServer") : c("separateTunnelService");
   return <WorkspaceDialog title={profile ? `${p("edit")} ${profile.name}` : c("addConnection")} onClose={onClose} busy={busy}>
     <form className="profile-editor connection-profile-editor" onSubmit={event => void submit(event)} aria-busy={busy}>
-      <NativeSelect label={c("provider")} aria-label={c("provider")} value={providerKind} onChange={event => { setProviderKind(event.currentTarget.value as TunnelProvider["kind"]); setApiKey(""); setCloudflareToken(""); }} disabled={busy || profile !== null} data={[{value:"openai",label:"OpenAI Tunnel"},{value:"cloudflare_named",label:c("cloudflareNamed")},{value:"cloudflare_quick",label:c("cloudflareQuick")}]} />
+      <Select label={c("provider")} aria-label={c("provider")} value={providerKind} allowDeselect={false} onChange={value => { if (!value) return; setProviderKind(value as TunnelProvider["kind"]); setApiKey(""); setCloudflareToken(""); }} disabled={busy || profile !== null} data={[{value:"openai",label:"OpenAI Tunnel"},{value:"cloudflare_named",label:c("cloudflareNamed")},{value:"cloudflare_quick",label:c("cloudflareQuick")}]} />
       <p className="field-help">{cloudflare ? c("cloudflareHelp") : p("tunnelCredentialHelp")}</p>
       {cloudflare && !persistentLocal && <Alert role="status"><p>{c("cloudflareEnvironment")}</p>{onSetup && <Button variant="default" onClick={() => { onClose(); onSetup(); }}>{c("openRuntimeSetup")}</Button>}</Alert>}
       {canChooseHost && <fieldset className="connection-owner-choice">

@@ -166,3 +166,20 @@ test("Admin unlock shows pending state and first-request failure without a false
   await waitFor(() => expect(unlock.disabled).toBe(false));
   expect(token.value).toBe("");
 });
+
+test.each([80.25, 80.49])("Admin scroll navigation recognizes a fractional mobile anchor landing at %spx", async (top) => {
+  vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(dashboardFixture)));
+  vi.stubGlobal("innerWidth", 390);
+  render(<UiProvider><AdminApp /></UiProvider>);
+  fireEvent.change(screen.getByLabelText("Admin token"), { target: { value: "fixture-secret" } });
+  fireEvent.click(screen.getByRole("button", { name: "Unlock console" }));
+  await screen.findByRole("heading", { name: "Operations" });
+  for (const [id, sectionTop] of [["overview-section", -200], ["devices-section", top], ["projects-section", 1000], ["diagnostics-section", 1500]] as const) {
+    vi.spyOn(document.getElementById(id)!, "getBoundingClientRect").mockReturnValue({ top: sectionTop } as DOMRect);
+  }
+  const runners = screen.getByRole("link", { name: "Runners" });
+  expect(runners.getAttribute("aria-current")).toBeNull();
+  fireEvent.scroll(window);
+  await waitFor(() => expect(runners.getAttribute("aria-current")).toBe("location"));
+  expect(screen.getByRole("link", { name: "Overview" }).getAttribute("aria-current")).toBeNull();
+});

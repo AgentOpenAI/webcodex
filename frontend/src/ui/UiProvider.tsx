@@ -3,6 +3,7 @@ import { MotionConfig } from "motion/react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ACCENT_CHANGE_EVENT, ACCENT_STORAGE_KEY, accentTokens, loadAccentPreference, normalizeAccent } from "./accent.js";
 import { accentVariantResolver } from "./mantineAccentTheme.js";
+import { useSelectionPreference } from "./useSelectionPreference.js";
 
 function resolvedTheme(): "light" | "dark" {
   return document.documentElement.dataset.resolvedTheme === "dark" ? "dark" : "light";
@@ -10,6 +11,7 @@ function resolvedTheme(): "light" | "dark" {
 
 /** Keeps Mantine's controls in step with the existing WebCodex appearance preference. */
 export function UiProvider({ children }: { children: ReactNode }) {
+  useSelectionPreference();
   const [colorScheme, setColorScheme] = useState(resolvedTheme);
   const [accent, setAccent] = useState(loadAccentPreference);
 

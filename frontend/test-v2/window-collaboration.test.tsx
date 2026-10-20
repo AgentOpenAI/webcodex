@@ -1,8 +1,13 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MantineProvider } from "@mantine/core";
+import type { ReactElement } from "react";
+import { UiProvider } from "../src/ui/UiProvider.js";
+import { act, fireEvent, render as testingRender, screen, waitFor } from "@testing-library/react";
 import { translate, RUNTIME_LANGUAGES } from "../src/runtime_i18n.js";
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeV2Client } from "../src/runtime-v2/api/client.js";
 import { WindowCollaboration } from "../src/runtime-v2/components/WindowCollaboration.js";
+
+const render = (ui: ReactElement) => testingRender(ui, { wrapper: ({ children }) => <UiProvider><MantineProvider env="test">{children}</MantineProvider></UiProvider> });
 
 const transcript = { available: true, can_send: true, messages: [
   { message_id: "wc_msg_operator", source: "operator", direction: "inbound", message: "Check failures", created_at_ms: 1000, kind: "guidance", priority: "normal", requires_ack: true, first_projected_at_ms: null, first_ack_observed_at_ms: null },
@@ -146,8 +151,10 @@ describe("Window collaboration", () => {
     expect(screen.getByText("⌘/Ctrl + Enter to send")).toBeTruthy();
     const inboundPeer = screen.getByText("Review done").closest("article");
     expect(inboundPeer?.textContent).not.toMatch(/Saved|Included in tool result|Acknowledged/);
-    fireEvent.change(screen.getByLabelText("Message type"), { target: { value: "question" } });
-    fireEvent.change(screen.getByLabelText("Message priority"), { target: { value: "high" } });
+    fireEvent.click(screen.getByRole("combobox", { name: "Message type" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Question" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Message priority" }));
+    fireEvent.click(await screen.findByRole("option", { name: "High" }));
     fireEvent.click(screen.getByLabelText("Require ACK"));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "No Session needed" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));

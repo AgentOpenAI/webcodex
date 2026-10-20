@@ -8,6 +8,7 @@ import { baseState, project } from '../../src/mcp_tests/work_result_app_fixture.
 
 // Shipped Apps in a private, synthetic MCP Host. No credentials or real projects.
 const baseline = process.argv.includes('--baseline');
+const caseFilter = process.env.WEBCODEX_SMOKE_CASE;
 const output = new URL(`../../artifacts/mcp-workspaces/${baseline ? 'baseline/' : ''}`, import.meta.url);
 await mkdir(output, { recursive: true });
 const server = createServer((request, response) => {
@@ -131,6 +132,7 @@ async function mount(kind, width, mode = 'fullscreen', empty = false, record = f
 }
 
 async function run(name, action) {
+  if (caseFilter && !name.includes(caseFilter)) return;
   const entry = { name, passed: false }; report.cases.push(entry);
   try { await action(); entry.passed = true; console.log(`PASS ${name}`); }
   catch (error) { entry.error = error.message; console.error(`FAIL ${name}: ${error.message}`); }
@@ -153,6 +155,43 @@ async function readableControls(frame) {
     return (values[1] + .05) / (values[0] + .05);
   });
   assert.ok(contrast >= 4.5, `Refresh text contrast is ${contrast.toFixed(2)}`);
+}
+
+// Geometry comes from actual browser text ranges, independently of the motion
+// controller. Underlines follow label content and leave the labels stationary.
+async function underlineGeometry(selected) {
+  return selected.evaluate(node => {
+    const range = document.createRange(); range.selectNodeContents(node);
+    const text = range.getBoundingClientRect(), button = node.getBoundingClientRect();
+    const plate = node.closest('[data-selection-motion]').querySelector('[data-selection-motion-plate]').getBoundingClientRect();
+    // Read both in the same layout: async card content and scroll anchoring can
+    // move the whole tab row between separate browser calls.
+    return {
+      expected: { x: Math.max(button.left, text.left), y: button.bottom - 3, width: Math.max(0, Math.min(button.right, text.right) - Math.max(button.left, text.left)), height: 3 },
+      actual: { x: plate.x, y: plate.y, width: plate.width, height: plate.height },
+    };
+  });
+}
+function aligned(actual, expected, message) {
+  assert.ok(actual && expected, `${message}: missing visible geometry`);
+  for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(actual[key] - expected[key]) < 1, `${message}: ${key} ${actual[key]} != ${expected[key]}`);
+}
+async function labelPositions(group) {
+  return group.locator('[data-selection-motion-item]').evaluateAll(nodes => nodes.map(node => {
+    const range = document.createRange(); range.selectNodeContents(node);
+    const box = range.getBoundingClientRect();
+    const origin = node.closest('[data-selection-motion]').getBoundingClientRect();
+    return { x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height };
+  }));
+}
+async function popupBounds(picker) {
+  return picker.evaluate(node => {
+    const popup = document.getElementById(node.getAttribute('aria-controls'));
+    const box = popup.getBoundingClientRect(), trigger = node.getBoundingClientRect();
+    return { visible: !popup.hidden, inBody: popup.parentElement === document.body,
+      fits: box.left >= 0 && box.right <= innerWidth + 1 && box.top >= 0 && box.bottom <= innerHeight + 1,
+      role: popup.getAttribute('role'), anchored: Math.abs(box.top - trigger.bottom - 6) < 1 || Math.abs(box.bottom - trigger.top + 6) < 1 };
+  });
 }
 
 try {
@@ -197,10 +236,15 @@ try {
           assert.ok(moving, 'Workbench must animate a persistent selection plate');
           assert.equal(moving.duration,260);
           const middle=await motion.boundingBox();
-          const end=await frame.locator('#tabFiles').boundingBox();
+          const { expected: end } = await underlineGeometry(frame.locator('#tabFiles'));
           assert.ok(Math.abs(middle.x-start.x)>1&&Math.abs(middle.x-end.x)>0.2,'Plate must pass through an intermediate position');
+          // Keep viewport movement between samples deterministic on a narrow card.
+          if (width === 390) await frame.evaluate(() => scrollBy(0, -25));
           await motion.evaluate(element=>{for(const animation of element.parentElement.getAnimations({subtree:true})){animation.finish();}});
-          const aligned=await motion.boundingBox();assert.ok(Math.abs(aligned.x-end.x)<1&&Math.abs(aligned.width-end.width)<1,'Plate ends aligned');
+          const settled = await underlineGeometry(frame.locator('#tabFiles'));
+          aligned(settled.actual, settled.expected, 'Project underline ends at the label');
+          assert.equal(await frame.locator('#projectTabs').getAttribute('data-selection-motion-variant'),'underline');
+          assert.equal(await frame.locator('#projectTabs [data-selection-motion-label]').count(),0,'Underline uses the original stationary labels');
           await frame.locator('#openDirectory').click();
           await frame.locator('#rows .row').filter({hasText:'README.md'}).getByRole('button',{name:'Preview',exact:true}).click();
           await frame.locator('#markdownPreview').waitFor();
@@ -229,6 +273,51 @@ try {
           assert.ok(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Work form overflows');
           await frame.locator('#closeWork').click();
           assert.equal(await frame.locator('#sessionSelect').inputValue(), '');
+          const primary = frame.locator('.primary-navigation');
+          const primaryPlate = primary.locator('[data-selection-motion-plate]');
+          await primary.scrollIntoViewIfNeeded();
+          const labels = await labelPositions(primary);
+          const primaryStart = await primaryPlate.evaluate(node => { const box = node.getBoundingClientRect(), group = node.parentElement.getBoundingClientRect(); return { x: box.x - group.x, y: box.y - group.y }; });
+          const primaryMoving = await frame.evaluate(async () => {
+            document.getElementById('goalsNav').click();
+            await new Promise(requestAnimationFrame);
+            const group = document.querySelector('.primary-navigation');
+            const animations = group.getAnimations({subtree:true});
+            for (const animation of animations) { animation.pause(); animation.currentTime = 85; }
+            const plate = group.querySelector('[data-selection-motion-plate]').getBoundingClientRect();
+            const origin = group.getBoundingClientRect();
+            return { count: animations.length, x: plate.x - origin.x, y: plate.y - origin.y };
+          });
+          assert.equal(primaryMoving.count, 2, 'Home/Goals flows a filled plate and clipped foreground');
+          assert.ok(Math.hypot(primaryMoving.x - primaryStart.x, primaryMoving.y - primaryStart.y) > 1, 'Filled selection travels between Home and Goals');
+          assert.deepEqual(await labelPositions(primary), labels, 'Home/Goals labels stay stationary');
+          await primaryPlate.evaluate(node => node.parentElement.getAnimations({subtree:true}).forEach(animation => animation.finish()));
+          await frame.waitForFunction(() => document.querySelector('.primary-navigation').getAnimations({subtree:true}).length === 0);
+          // ResizeObserver can deliver a content-layout snap on the next frame
+          // after a finished transition. Assert the resulting stable geometry.
+          await frame.waitForFunction(() => {
+            const group = document.querySelector('.primary-navigation');
+            const plate = group.querySelector('[data-selection-motion-plate]').getBoundingClientRect();
+            const selected = document.getElementById('goalsNav').getBoundingClientRect();
+            return ['x','y','width','height'].every(key => Math.abs(plate[key] - selected[key]) < 1);
+          }).catch(async error => {
+            await page.screenshot({path:new URL(`workbench-primary-failure-${width}.png`,output).pathname});
+            throw error;
+          });
+          aligned(await primaryPlate.boundingBox(), await frame.locator('#goalsNav').boundingBox(), 'Goals filled plate');
+          const palette = await primary.evaluate(group => {
+            const probe = document.createElement('span'); group.append(probe);
+            probe.style.color = 'var(--ui-accent-soft)'; const soft = getComputedStyle(probe).color;
+            probe.style.color = 'var(--ui-on-accent-soft)'; const ink = getComputedStyle(probe).color; probe.remove();
+            return { soft, ink, fill: getComputedStyle(group.querySelector('[data-selection-motion-plate]')).backgroundColor,
+              actualInk: getComputedStyle(group.querySelector('[data-selection-motion-label]')).color };
+          });
+          assert.equal(palette.fill, palette.soft, 'Home/Goals uses a pale accent background');
+          assert.equal(palette.actualInk, palette.ink, 'Home/Goals uses readable accent ink');
+          await page.screenshot({path:new URL(`workbench-primary-filled-${width}.png`,output).pathname});
+          await frame.locator('#homeNav').click();
+          await frame.waitForFunction(() => document.querySelector('.primary-navigation').getAnimations({subtree:true}).length === 0);
+
         } else {
           await frame.locator('#tabResults').focus();
           await frame.locator('#tabResults').press('Enter');
@@ -260,6 +349,50 @@ try {
       } finally { const video=page.video();await page.close();if(video)await video.saveAs(new URL('workbench-motion.webm',output).pathname); }
     });
   }
+  for (const kind of ['workbench', 'work_result']) for (const width of [320, 1440]) await run(`${kind}: local selection preference, picker and reload (${width})`, async () => {
+    const { page, frame, errors } = await mount(kind, width, 'fullscreen');
+    try {
+      const disclosure = frame.locator(kind === 'workbench' ? '#instanceMenu' : '.card-appearance');
+      await disclosure.locator('summary').click();
+      const source = frame.locator('#selectionPreference');
+      const picker = disclosure.getByRole('combobox', { name: 'Selected controls' });
+      assert.equal(await source.inputValue(), 'accent');
+      const plate = frame.locator(kind === 'workbench' ? '.primary-navigation [data-selection-motion-plate]' : '#viewTabs [data-selection-motion-plate]');
+      const accentFill = await plate.evaluate(node => getComputedStyle(node).backgroundColor);
+      const contextBefore = await page.evaluate(() => fixture.contextUpdates.length);
+      await picker.click();
+      assert.deepEqual(await popupBounds(picker), { visible: true, inBody: true, fits: true, role: 'listbox', anchored: true });
+      await picker.press('End');
+      await picker.press('Enter');
+      await frame.waitForFunction(() => document.documentElement.dataset.selectionColor === 'monochrome');
+      assert.equal(await source.inputValue(), 'monochrome');
+      assert.equal(await source.evaluate(node => localStorage.getItem('webcodex.ui.selection.v1')), 'monochrome');
+      const monochromeFill = await plate.evaluate(node => getComputedStyle(node).backgroundColor);
+      assert.notEqual(monochromeFill, accentFill, 'Monochrome visibly changes the selected control');
+      const channels = monochromeFill.match(/[\d.]+/g).slice(0, 3).map(Number);
+      assert.equal(channels[0], channels[1]); assert.equal(channels[1], channels[2]);
+      assert.equal(await page.evaluate(() => fixture.contextUpdates.length), contextBefore, 'Local appearance never attaches model context');
+      assert.equal(await page.evaluate(() => fixture.workSubmitAttempts), 0, 'Local appearance never submits work');
+      await picker.click();
+      await page.screenshot({ path: new URL(`${kind}-appearance-monochrome-${width}.png`, output).pathname });
+      await picker.press('Escape');
+      // Re-mount the same shipped srcdoc in the same isolated browser context.
+      // Its saved setting must survive card recreation without a Host setting.
+      await page.evaluate(() => { const frame = document.querySelector('iframe'); frame.srcdoc = frame.srcdoc; });
+      await frame.locator('#refresh:not(:disabled)').waitFor();
+      await frame.waitForFunction(() => document.documentElement.dataset.selectionColor === 'monochrome');
+      assert.equal(await frame.locator('#selectionPreference').inputValue(), 'monochrome');
+      await page.evaluate(() => changeContext({ theme: 'light' }));
+      await frame.waitForFunction(() => document.documentElement.style.colorScheme === 'light');
+      assert.equal(await frame.locator('#selectionPreference').inputValue(), 'monochrome');
+      await disclosure.locator('summary').click();
+      await picker.click(); await picker.press('Home'); await picker.press('Enter');
+      assert.equal(await source.inputValue(), 'accent');
+      assert.equal(await frame.evaluate(() => document.documentElement.dataset.selectionColor), 'accent');
+      assert.deepEqual(await page.evaluate(() => fixture.errors), []);
+      assert.deepEqual(errors, []);
+    } finally { await page.close(); }
+  });
   for (const kind of ['workbench', 'work_result']) await run(`${kind}: inline height follows content without resize loops`, async () => {
     const { page, frame, errors } = await mount(kind, 390, 'inline');
     try {
@@ -400,6 +533,7 @@ try {
           await frame.locator('#tabActivity').click();
           await frame.waitForFunction(() => document.querySelector('#viewTabs').getAnimations({ subtree: true }).length === 0);
           const start = await plate.boundingBox();
+          const labelsBefore = await labelPositions(frame.locator('#viewTabs'));
           // Dispatch synchronously to inspect the animation before Playwright's
           // actionability wait can let a short transition finish.
           const moving = await frame.evaluate(async () => {
@@ -410,13 +544,15 @@ try {
             for (const animation of animations) { animation.pause(); animation.currentTime = 85; }
             // Read the sought frame atomically: inline Hosts may resize the
             // iframe next, which correctly snaps the presentation to new bounds.
-            return { count: animations.length, duration: plate.getAnimations()[0]?.effect.getTiming().duration, middle: plate.getBoundingClientRect().x, destination: document.querySelector('#tabResults').getBoundingClientRect().x };
+            return { count: animations.length, duration: plate.getAnimations()[0]?.effect.getTiming().duration, middle: plate.getBoundingClientRect().x, destination: (() => { const range = document.createRange(); range.selectNodeContents(document.querySelector('#tabResults')); return range.getBoundingClientRect().x; })() };
           });
           if (reducedMotion === 'no-preference') {
-            assert.equal(moving.count, 2, 'One plate and one clipped label animation');
+            assert.equal(moving.count, 1, 'Content tabs animate only the underline');
             assert.equal(moving.duration, 260);
             assert.ok(Math.abs(moving.middle - start.x) > 1 && Math.abs(moving.middle - moving.destination) > .2, 'Plate passes through an intermediate position');
           } else assert.equal(moving.count, 0, 'Reduced motion snaps without animations');
+          assert.deepEqual(await labelPositions(frame.locator('#viewTabs')), labelsBefore, 'Content labels remain stationary while the underline moves');
+          assert.equal(await frame.locator('#viewTabs [data-selection-motion-label]').count(), 0, 'Content tabs retain one accessible label per control');
           // Interrupt the paused transition repeatedly, allowing mutation
           // observers to see each new selection without waiting for settlement.
           await frame.evaluate(async () => {
@@ -429,8 +565,9 @@ try {
           assert.equal(await plate.evaluate(node => node === window.motionFixturePlate), true, 'Selection plate remains persistent');
           const selected = frame.locator('#viewTabs [role=tab][aria-selected=true]');
           assert.equal(await selected.getAttribute('id'), 'tabCollaboration');
-          const actual = await plate.boundingBox(), expected = await selected.boundingBox();
-          for (const key of ['x', 'y', 'width', 'height']) assert.ok(Math.abs(actual[key] - expected[key]) < 1, `Final plate ${key} aligns after rapid switching`);
+          const { expected, actual } = await underlineGeometry(selected);
+          aligned(actual, expected, 'Final content-width underline after rapid switching');
+          assert.ok(expected.width <= (await selected.boundingBox()).width + .1, 'Content underline stays within its tab at narrow widths');
           assert.equal(await frame.locator('#viewTabs [role=tab][tabindex="0"]').count(), 1);
           assert.ok(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Motion layout overflows');
           await frame.locator('#tabActivity').click();
@@ -448,23 +585,26 @@ try {
       }
     });
   }
-  await run('work_result: native message picker keyboard interaction (390)', async () => {
+  await run('work_result: enhanced message picker keyboard, portal and cancellation (390)', async () => {
     const { page, frame, errors } = await mount('work_result', 390, 'fullscreen', false, true);
     try {
       await frame.locator('#tabCollaboration').click();
       const picker = frame.getByRole('combobox', { name: 'Message type' });
-      assert.equal(await picker.inputValue(), 'guidance');
+      const source = frame.locator('#messageKind');
+      assert.equal(await source.inputValue(), 'guidance');
       await picker.focus();
       await page.keyboard.press('Space');
+      assert.deepEqual(await popupBounds(picker), { visible: true, inBody: true, fits: true, role: 'listbox', anchored: true });
+      await page.screenshot({ path: new URL('work-result-message-picker-open-390.png', output).pathname });
       await page.keyboard.press('ArrowDown');
       await page.keyboard.press('Enter');
-      assert.equal(await picker.inputValue(), 'question');
-      assert.equal(await picker.evaluate(node => document.activeElement === node), true, 'Closing the native picker returns focus');
+      assert.equal(await source.inputValue(), 'question');
+      assert.equal(await picker.evaluate(node => document.activeElement === node), true, 'Closing the enhanced picker returns focus');
       await page.keyboard.press('Space');
       await page.keyboard.press('Escape');
-      assert.equal(await picker.inputValue(), 'question', 'Cancel preserves the selected type');
+      assert.equal(await source.inputValue(), 'question', 'Cancel preserves the selected type');
       assert.equal(await picker.evaluate(node => document.activeElement === node), true);
-      assert.ok(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Native picker layout overflows');
+      assert.ok(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Enhanced picker layout overflows');
       assert.deepEqual(await page.evaluate(() => fixture.errors), []);
       assert.deepEqual(errors, []);
       await page.screenshot({ path: new URL('work-result-message-picker-390.png', output).pathname });
@@ -559,4 +699,5 @@ try {
   await writeFile(new URL('report.json', output), JSON.stringify(report, null, 2) + '\n');
   await browser.close(); server.close();
 }
+if (!report.cases.length) throw new Error('No browser cases matched WEBCODEX_SMOKE_CASE');
 if (!baseline && report.cases.some(entry => !entry.passed)) process.exitCode = 1;

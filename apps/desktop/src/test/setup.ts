@@ -23,6 +23,14 @@ if (!window.matchMedia) {
   });
 }
 
+// Mantine listboxes and scroll areas observe geometry in a real WebView.
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class ResizeObserver {
+    observe() {} unobserve() {} disconnect() {}
+  };
+}
+if (!HTMLElement.prototype.scrollIntoView) HTMLElement.prototype.scrollIntoView = () => {};
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();

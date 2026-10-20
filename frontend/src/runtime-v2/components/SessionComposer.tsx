@@ -1,3 +1,4 @@
+import { Select } from "@mantine/core";
 import { useFlowingSelection } from "../../ui/useFlowingSelection.js";
 import { ArrowUpRight, Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -24,7 +25,7 @@ export function SessionComposer({ location, session, language }: Props) {
   const [composer, setComposer] = useState("");
   const [kind, setKind] = useState("note");
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, kind);
+  useFlowingSelection(selectionRef, kind, { variant: "filled" });
   const [priority, setPriority] = useState("normal");
   const [requiresAck, setRequiresAck] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState("");
@@ -183,21 +184,15 @@ export function SessionComposer({ location, session, language }: Props) {
               <div className="composer-options-popover">
                 <label>
                   {t("Kind")}
-                  <select value={kind} onChange={(event) => { reviseDraft(); setKind(event.target.value); }}>
-                    <option value="note">{t("Note")}</option>
-                    <option value="progress">{t("Progress")}</option>
-                    <option value="guidance">{t("Guidance")}</option>
-                    <option value="question">{t("Question")}</option>
-                    <option value="risk">{t("Risk")}</option>
-                    <option value="todo">{t("Todo")}</option>
-                  </select>
+                  <Select aria-label={t("Kind")} value={kind} allowDeselect={false}
+                    onChange={(value) => { if (value !== null) { reviseDraft(); setKind(value); } }}
+                    data={["note", "progress", "guidance", "question", "risk", "todo"].map(value => ({ value, label: t(value[0].toUpperCase() + value.slice(1)) }))} />
                 </label>
                 <label>
                   {t("Priority")}
-                  <select value={priority} onChange={(event) => { reviseDraft(); setPriority(event.target.value); }}>
-                    <option value="normal">normal</option>
-                    <option value="high">high</option>
-                  </select>
+                  <Select aria-label={t("Priority")} value={priority} allowDeselect={false}
+                    onChange={(value) => { if (value !== null) { reviseDraft(); setPriority(value); } }}
+                    data={[{ value: "normal", label: "normal" }, { value: "high", label: "high" }]} />
                 </label>
                 <label className="checkbox-line">
                   <input type="checkbox" checked={requiresAck} onChange={(event) => { reviseDraft(); setRequiresAck(event.target.checked); }} />

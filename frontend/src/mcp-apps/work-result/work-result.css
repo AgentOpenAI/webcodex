@@ -1,14 +1,13 @@
 /* Work Result uses the Workbench's opaque, neutral surfaces. Host color-scheme
    and font variables remain authoritative; status colors keep their meaning. */
 :root {
-  --accent: CanvasText;
-  --accent-soft: color-mix(in srgb, CanvasText 7%, Canvas);
+  --accent-soft: color-mix(in srgb, var(--accent) 7%, Canvas);
   --card-header: Canvas;
   --card-body: Canvas;
   --surface: color-mix(in srgb, CanvasText 4%, Canvas);
   --surface-hover: color-mix(in srgb, CanvasText 8%, Canvas);
-  --selection-motion-fill: CanvasText;
-  --selection-motion-ink: Canvas;
+  --selection-motion-fill: var(--ui-selection-fill);
+  --selection-motion-ink: var(--ui-selection-ink);
   --selection-motion-base-ink: CanvasText;
 }
 .card { border-radius: 12px; box-shadow: none; }
@@ -31,7 +30,7 @@ h1 { font-size: 13px; font-weight: 650; }
 .refresh:active:not(:disabled) { transform: none; }
 .refresh:hover:not(:disabled), .file-views button:hover:not(:disabled) { background: var(--surface-hover); }
 button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible {
-  outline: 2px solid CanvasText; outline-offset: 2px;
+  outline: 2px solid var(--ui-selection-color); outline-offset: 2px;
 }
 .content { padding: 12px; gap: 12px; }
 .section { padding: 12px; border-radius: 8px; background: Canvas; gap: 8px; }
@@ -39,19 +38,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 h2 { font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .primary { font-size: 14px; font-weight: 600; line-height: 1.5; }
 .card-tabs {
-  margin: 0 12px; padding: 4px; gap: 4px; border: 1px solid var(--divider);
-  border-radius: 9px; background: var(--surface);
+  margin: 0 12px; padding: 4px 0; gap: 4px; border: 0; border-bottom: 1px solid var(--divider);
+  border-radius: 0; background: transparent;
 }
 .card-tabs button {
   min-height: 34px; padding: 7px 10px; border: 0; border-radius: 6px;
   font: inherit; font-size: 12px; font-weight: 550; color: CanvasText;
 }
-.card-tabs button[aria-selected="true"] { color: Canvas; background: CanvasText; font-weight: 550; }
+.card-tabs button[aria-selected="true"] { color: var(--ui-selection-color); background: transparent; border-bottom-color: transparent; font-weight: 550; }
 .card-tabs button:hover { background: var(--surface-hover); }
 .card-tabs button:focus-visible { outline-offset: -2px; }
 .file-views[data-work-result-selection] { position: relative; align-items: center; }
 .file-views button[data-view] { border-color: transparent; }
-.file-views button[data-view][aria-pressed="true"] { color: Canvas; background: CanvasText; }
+.file-views button[data-view][aria-pressed="true"] { color: var(--ui-selection-ink); background: var(--ui-selection-fill); }
 .thread-review .file-views .refresh[aria-pressed="true"]:not([data-view]) {
   background: var(--surface-hover); border-color: var(--card-border); color: CanvasText;
 }
@@ -68,19 +67,6 @@ select, .conversation-intent select, .file-navigator select, input, textarea {
 select, .conversation-intent select, .file-navigator select { padding: 6px 28px 6px 9px; cursor: pointer; }
 select:hover:not(:disabled), input:hover:not(:disabled), textarea:hover:not(:disabled) { border-color: var(--muted); }
 select:disabled { opacity: .48; cursor: default; }
-/* New browsers style the native picker without replacing its value, form,
-   focus or keyboard behavior. Other Hosts retain their platform picker. */
-@supports (appearance: base-select) {
-  select, ::picker(select) { appearance: base-select; }
-  select::picker-icon { color: var(--muted); }
-  ::picker(select) {
-    background: Canvas; color: CanvasText; border: 1px solid var(--card-border);
-    border-radius: 8px; padding: 4px; max-height: min(320px, 60dvh); overflow: auto;
-    box-shadow: 0 8px 24px color-mix(in srgb, CanvasText 12%, transparent);
-  }
-  select option { padding: 7px 9px; border-radius: 5px; overflow-wrap: anywhere; }
-  select option:hover, select option:checked { background: var(--surface-hover); }
-}
 :root[data-display-mode="fullscreen"] .app-header { padding: 12px 20px; }
 :root[data-display-mode="fullscreen"] h1 { font-size: 14px; }
 :root[data-display-mode="fullscreen"] .card-tabs { padding: 4px; margin: 0 20px; }

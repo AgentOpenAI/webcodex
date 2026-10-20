@@ -126,7 +126,7 @@ export function WindowWorkbench({
   const [search, setSearch] = useState("");
   const [centerTab, setCenterTab] = useState<"window" | "collaboration">("window");
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, centerTab);
+  useFlowingSelection(selectionRef, centerTab, { variant: "underline" });
   const [selectedSessionId, setSelectedSessionId] = useState("");
   const historicalFamilies = useMemo(() => buildProjectFamilies(projects, projectIndex, windows.historicalWindows), [projects, projectIndex, windows.historicalWindows]);
   const familyById = useMemo(() => new Map(historicalFamilies.map(family => [family.id, family])), [historicalFamilies]);
@@ -361,7 +361,7 @@ export function WindowWorkbench({
                   : t("Idle") + " · " + relativeTime(lastObservedAt)}
               </span>
               <details className="window-header-details">
-                <summary>{t("Window details")} · {shortId(windows.selectedKey, 8, 6)}</summary>
+                <summary>{t("Window details")}</summary>
                 <dl className="window-header-facts" aria-label={t("Window details")}>
                   <div className="window-header-fact" title={windows.selectedKey} data-testid="current-window-identity">
                     <dt><Monitor size={14} aria-hidden="true" />{t("Window ID")}</dt>

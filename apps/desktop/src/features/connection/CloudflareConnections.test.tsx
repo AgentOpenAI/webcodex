@@ -1,3 +1,4 @@
+import { selectOption } from "../../test/select-option";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DesktopMantineProvider } from "../../components/DesktopMantineProvider";
@@ -19,7 +20,7 @@ describe("Cloudflare connection configuration",()=>{
     let saved:TunnelProfileRequest|undefined;
     api.saveTunnelProfile.mockImplementation(async request=>{saved=structuredClone(request);return {};});
     render(wrap(<ConnectionEditor profile={null} persistentLocal onState={vi.fn()} onClose={vi.fn()} />));
-    fireEvent.change(screen.getByLabelText("Connection provider"),{target:{value:"cloudflare_named"}});
+    selectOption(screen.getByRole("combobox", { name: "Connection provider" }), "cloudflare_named");
     fireEvent.change(screen.getByLabelText("Name"),{target:{value:"Named"}});
     fireEvent.change(screen.getByLabelText("Tunnel ID"),{target:{value:"named-id"}});
     fireEvent.change(screen.getByLabelText("Fixed HTTPS origin"),{target:{value:"https://mcp.example/"}});
@@ -34,7 +35,7 @@ describe("Cloudflare connection configuration",()=>{
     let saved:TunnelProfileRequest|undefined;
     api.saveTunnelProfile.mockImplementation(async request=>{saved=structuredClone(request);return {};});
     render(wrap(<ConnectionEditor profile={null} persistentLocal onState={vi.fn()} onClose={vi.fn()} />));
-    fireEvent.change(screen.getByLabelText("Connection provider"),{target:{value:"cloudflare_quick"}});
+    selectOption(screen.getByRole("combobox", { name: "Connection provider" }), "cloudflare_quick");
     expect(screen.queryByLabelText("API key")).toBeNull();expect(screen.queryByLabelText("Tunnel ID")).toBeNull();expect(screen.queryByLabelText("Tunnel token")).toBeNull();
     expect(screen.getByText(/addresses change on reconnect/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Name"),{target:{value:"Quick"}});
@@ -45,7 +46,7 @@ describe("Cloudflare connection configuration",()=>{
   it("routes legacy setup through Runtime repair and never creates a parallel Cloudflare store",()=>{
     const onSetup=vi.fn(),onClose=vi.fn();
     render(wrap(<ConnectionEditor profile={null} persistentLocal={false} onState={vi.fn()} onClose={onClose} onSetup={onSetup} />));
-    fireEvent.change(screen.getByLabelText("Connection provider"),{target:{value:"cloudflare_quick"}});
+    selectOption(screen.getByRole("combobox", { name: "Connection provider" }), "cloudflare_quick");
     expect(screen.getByRole("button",{name:"Save and apply"})).toBeDisabled();
     fireEvent.click(screen.getByRole("button",{name:"Open Runtime setup"}));
     expect(onSetup).toHaveBeenCalledOnce();expect(onClose).toHaveBeenCalledOnce();expect(api.saveTunnelProfile).not.toHaveBeenCalled();
@@ -55,7 +56,7 @@ describe("Cloudflare connection configuration",()=>{
     let saved:TunnelProfileRequest|undefined;
     api.saveTunnelProfile.mockImplementation(async request=>{saved=structuredClone(request);return {};});
     render(wrap(<ConnectionEditor profile={profile} persistentLocal onState={vi.fn()} onClose={vi.fn()} />));
-    expect(screen.getByLabelText("Tunnel token")).toHaveValue("");expect(screen.getByLabelText("Connection provider")).toBeDisabled();expect(screen.getByLabelText("Tunnel ID")).toBeDisabled();
+    expect(screen.getByLabelText("Tunnel token")).toHaveValue("");expect(screen.getByRole("combobox", { name: "Connection provider" })).toBeDisabled();expect(screen.getByLabelText("Tunnel ID")).toBeDisabled();
     fireEvent.click(screen.getByRole("button",{name:"Save and apply"}));
     await waitFor(()=>expect(saved).toMatchObject({id:"cf",expected_revision:4,cloudflare_token:null}));
   });

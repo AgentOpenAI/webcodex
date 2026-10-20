@@ -61,7 +61,8 @@
   box-shadow: none;
 }
 .sidebar nav button.active:hover { background: var(--ui-accent-soft); color: var(--ui-on-accent-soft); }
-.sidebar nav button.active .navigation-icon, .sidebar nav button.active kbd { color: inherit; }
+.sidebar nav button.active .navigation-icon { color: inherit; }
+.sidebar nav button.active kbd { color: var(--ui-selection-ink); }
 .navigation-icon { color: inherit; }
 .navigation-icon { width: 18px; height: 18px; stroke-width: 1.75; }
 .sidebar-preferences { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--ui-border-subtle); }
@@ -309,7 +310,7 @@ input[type="checkbox"].desktop-switch:hover:not(:disabled):not(:checked) { backg
 .settings-page .setting-row:last-child { border-bottom: 0; }
 /* Labels and plain row titles share one treatment. */
 .settings-page .setting-row > label:first-child, .settings-page .setting-row > span:first-child { color: var(--ui-text-primary); font-size: 14px; font-weight: 500; }
-.settings-page .setting-row select, .settings-page .accent-picker { width: 220px; }
+.settings-page .setting-row .mantine-Select-root, .settings-page .accent-picker { width: 220px; }
 .settings-network > h2 { margin-bottom: 16px; font-size: var(--ui-font-section); }
 .settings-network > .field-group { margin-bottom: 20px; }
 .settings-network .detail-list { margin-block: 24px; }
@@ -354,7 +355,7 @@ input[type="checkbox"].desktop-switch:hover:not(:disabled):not(:checked) { backg
   .settings-layout, .extensions-layout { grid-template-columns: 170px minmax(0, 1fr); gap: 20px; }
 
   .settings-page .setting-row { align-items: flex-start; flex-direction: column; gap: 12px; }
-  .settings-page .setting-row select, .settings-page .accent-picker { width: min(300px, 100%); }
+  .settings-page .setting-row .mantine-Select-root, .settings-page .accent-picker { width: min(300px, 100%); }
 }
 
 @media (max-width: 1100px) {
@@ -391,7 +392,7 @@ input[type="checkbox"].desktop-switch:hover:not(:disabled):not(:checked) { backg
 
 
   .workspace-status-strip > div:nth-child(3) { grid-column: 1 / -1; }
-  .settings-page .setting-row select, .settings-page .accent-picker { width: 100%; }
+  .settings-page .setting-row .mantine-Select-root, .settings-page .accent-picker { width: 100%; }
   .settings-content .permission-row { grid-template-columns: minmax(0, 1fr); }
   .settings-content .permission-row > button { grid-column: 1; grid-row: auto; justify-self: start; max-width: 100%; }
   .activity-project-filter .project-picker { width: 100%; }
@@ -472,7 +473,7 @@ input[type="checkbox"].desktop-switch:hover:not(:disabled):not(:checked) { backg
 /* Both activity filters put their label beside the control on one baseline. */
 .activity-session-filter .mantine-InputWrapper-root { display: flex; align-items: center; gap: var(--ui-space-3); }
 .activity-session-filter .mantine-InputWrapper-label { flex-shrink: 0; margin: 0; color: var(--ui-text-secondary); font-size: var(--ui-font-label); font-weight: 500; white-space: nowrap; }
-.activity-session-filter .mantine-NativeSelect-wrapper { flex: 1; min-width: 0; }
+.activity-session-filter .mantine-Select-wrapper { flex: 1; min-width: 0; }
 .activity-session-filter-help { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin-block: 12px; }
 .activity-session-filter-help .field-help { flex: 1 1 300px; margin: 0; }
 .activity-counts { display: flex; gap: 12px 20px; flex-wrap: wrap; color: var(--ui-text-secondary); font-size: 13px; }
@@ -649,7 +650,7 @@ input[type="checkbox"].desktop-switch:hover:not(:disabled):not(:checked) { backg
 .mantine-Button-label { height: auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .settings-content, .extensions-content, .settings-navigation, .extensions-navigation { min-width: 0; }
 .setting-row > div, .permission-row > div { min-width: 0; overflow-wrap: anywhere; }
-.settings-page .setting-row select, .settings-page .accent-picker { flex-shrink: 0; max-width: 100%; }
+.settings-page .setting-row .mantine-Select-root, .settings-page .accent-picker { flex-shrink: 0; max-width: 100%; }
 .workspace-status-strip > div { min-width: 0; overflow-wrap: anywhere; }
 .workspace-badge { white-space: normal; overflow-wrap: anywhere; }
 @media (max-width: 600px) {
@@ -717,3 +718,21 @@ input[type="checkbox"].desktop-switch:hover:not(:disabled):not(:checked) { backg
 .workspace-search label, .activity-project-filter label { color: var(--ui-text-secondary); font-size: var(--ui-font-label); font-weight: 500; }
 .runner-capability-authorization { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .runner-capability-authorization > p { flex-basis: 100%; margin: 0; }
+
+/* Selected controls share one local selection preference. */
+.sidebar nav, .workspace-tabs, .settings-navigation, .extensions-navigation {
+  --selection-motion-fill: var(--ui-selection-fill);
+  --selection-motion-ink: var(--ui-selection-ink);
+}
+.sidebar nav button.active, .sidebar nav button.active:hover {
+  background: var(--ui-selection-fill); color: var(--ui-selection-ink);
+}
+.workspace-tabs > button[aria-selected="true"] {
+  background: transparent; color: var(--ui-selection-color); border-radius: 0;
+}
+.settings-navigation > button[aria-selected="true"], .extensions-navigation > button[aria-selected="true"] {
+  background: var(--ui-selection-fill); color: var(--ui-selection-ink);
+}
+/* The focus ring follows the rounded outer control, including password shells. */
+.ui-mantine-input, input:not([type="radio"]):not([type="checkbox"]):not([type="file"]):not([type="color"]):not([type="date"]):not(.mantine-Input-input), textarea:not(.mantine-Input-input) { border-radius: var(--ui-radius-md); }
+.ui-mantine-input:focus, .ui-mantine-input:focus-within { border-color: var(--ui-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-accent) 16%, transparent); outline: 0; }

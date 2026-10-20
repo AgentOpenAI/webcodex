@@ -24,22 +24,43 @@ async function settle(page) {
   await page.evaluate(() => { for (const a of document.getAnimations()) if (a.effect?.target?.matches('[data-selection-motion-overlay]')) a.finish(); });
   await frames(page);
 }
-async function exercise(page, selector, name) {
+async function exercise(page, selector, name, expectedVariant) {
   const group = page.locator(selector).first();
   await group.waitFor();
   await group.locator('[data-selection-motion-plate]').waitFor({ state: 'attached' });
   await settle(page);
+  if (expectedVariant) {
+    const state = await group.evaluate(group => {
+      const plate = group.querySelector('[data-selection-motion-plate]');
+      const probe = document.createElement('span'); group.append(probe);
+      probe.style.color = 'var(--ui-accent-soft)'; const soft = getComputedStyle(probe).color;
+      probe.style.color = 'var(--ui-on-accent-soft)'; const ink = getComputedStyle(probe).color; probe.remove();
+      return { variant: group.dataset.selectionMotionVariant, fill: getComputedStyle(plate).backgroundColor, soft, ink,
+        actualInk: getComputedStyle(group.querySelector('[data-selection-motion-label]') || group.querySelector('[data-selection-motion-selected]')).color };
+    });
+    assert.equal(state.variant, expectedVariant, `${name} navigation/content classification`);
+    if (expectedVariant === 'filled') { assert.equal(state.fill, state.soft, `${name} pale selection`); assert.equal(state.actualInk, state.ink, `${name} accent ink`); }
+    report.checks.push({name:`${name} selection treatment`,...state});
+  }
   const result = await group.evaluate(async (group) => {
     const raf = () => new Promise(resolve => requestAnimationFrame(resolve));
     const plate = group.querySelector('[data-selection-motion-plate]');
     const items = [...group.querySelectorAll('[data-selection-motion-item]')];
     const selected = () => items.find(item => item.hasAttribute('data-selection-motion-selected'));
     const box = node => { const b = node.getBoundingClientRect(),o=node.closest('[data-selection-motion]').getBoundingClientRect(); return { x:b.x-o.x,y:b.y-o.y,width:b.width,height:b.height }; };
+    const indicatorBox = item => {
+      const b=box(item); if(group.dataset.selectionMotionVariant!=='underline') return b;
+      const rects=[]; const walker=document.createTreeWalker(item,NodeFilter.SHOW_TEXT);
+      while(walker.nextNode()){if(!walker.currentNode.textContent.trim())continue;const r=document.createRange();r.selectNodeContents(walker.currentNode);rects.push(r.getBoundingClientRect());}
+      rects.push(...[...item.querySelectorAll('svg,img')].map(node=>node.getBoundingClientRect()));
+      const visible=rects.filter(r=>r.width>0),o=group.getBoundingClientRect();
+      return {x:Math.min(...visible.map(r=>r.left))-o.left,y:b.y+b.height-3,width:Math.max(...visible.map(r=>r.right))-Math.min(...visible.map(r=>r.left)),height:3};
+    };
     const near = (a,b) => ['x','y','width','height'].every(key => Math.abs(a[key]-b[key]) < 1.1);
     const click = item => (item.querySelector('input') || item).click();
     const textBoxes = node => {
       const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT), result=[];
-      while(walker.nextNode()){const text=walker.currentNode;if(!text.textContent.trim())continue;const range=document.createRange();range.selectNodeContents(text);const b=range.getBoundingClientRect();result.push({text:text.textContent,x:b.x,y:b.y,width:b.width,height:b.height});}return result;
+      while(walker.nextNode()){const text=walker.currentNode;if(!text.textContent.trim()||text.parentElement.closest('[data-selection-motion-skip]'))continue;const range=document.createRange();range.selectNodeContents(text);const b=range.getBoundingClientRect();result.push({text:text.textContent,x:b.x,y:b.y,width:b.width,height:b.height});}return result;
     };
     const first = selected(), target = items.find(item => item !== first);
     if (!target) throw Error('Expected at least two items');
@@ -50,15 +71,15 @@ async function exercise(page, selector, name) {
     if (!animations.length) return {missingAnimation:true,connected:plate.isConnected,immediateAnimations,before,end:target.isConnected?box(target):null,actual:plate.isConnected?box(plate):null,selected: selected()?.textContent,items:items.map(item=>({text:item.textContent,selected:item.hasAttribute('data-selection-motion-selected'),checked:item.querySelector('input')?.checked}))};
     const animation = animations[0]; animation.pause();
     const duration = animation.effect.getTiming().duration;
-    const end = box(target), samples = [];
-    for (const time of [0, 65, 130, 187.2, 230, 259]) {
+    const end = indicatorBox(target), samples = [];
+    for (const time of [0, 20, 40, 65, 130, 187.2, 230, 259]) {
       animation.currentTime = time; await raf();
       const actual = box(plate); samples.push({ time, ...actual });
       if (actual.width > Math.max(before.width,end.width)*1.0301+.1 || actual.height > Math.max(before.height,end.height)*1.0301+.1) throw Error('Stretch exceeds 3%');
     }
     const intermediate = samples.some(sample => !near(sample,before) && !near(sample,end));
     animation.finish(); await raf();
-    const aligned = near(box(plate), box(target));
+    const aligned = near(box(plate), indicatorBox(target));
     // A reversal starts at the actual visible intermediate geometry, not the old target.
     click(first); await Promise.resolve(); await raf();
     let reversing = plate.getAnimations()[0]; reversing?.pause(); if (reversing) reversing.currentTime=90; await raf();
@@ -69,12 +90,12 @@ async function exercise(page, selector, name) {
     const resumed=box(plate); const continuous = near(resumed, interrupted);
     for (const a of group.getAnimations({subtree:true})) a.finish(); await raf();
     const mirrors=[...group.querySelectorAll('[data-selection-motion-label]')];
-    const textGeometry=items.map((item,index)=>({original:textBoxes(item),mirror:textBoxes(mirrors[index])}));
-    const iconGeometry=items.map((item,index)=>({original:[...item.querySelectorAll('svg')].map(box),mirror:[...mirrors[index].querySelectorAll('svg')].map(box)}));
+    const textGeometry=(group.dataset.selectionMotionVariant==='underline'?[]:items).map((item,index)=>({original:textBoxes(item),mirror:textBoxes(mirrors[index])}));
+    const iconGeometry=(group.dataset.selectionMotionVariant==='underline'?[]:items).map((item,index)=>({original:[...item.querySelectorAll('svg')].map(box),mirror:[...mirrors[index].querySelectorAll('svg')].map(box)}));
     const stationaryIcons=iconGeometry.every(({original,mirror})=>original.length===mirror.length&&original.every((icon,index)=>near(icon,mirror[index])));
     const stationaryText=textGeometry.every(({original,mirror})=>original.length===mirror.length&&original.every((text,index)=>text.text===mirror[index].text&&near(text,mirror[index])));
     return { duration, intermediate, aligned, continuous, interrupted, resumed, stationaryText, textGeometry, stationaryIcons, iconGeometry, persistent: plate===group.querySelector('[data-selection-motion-plate]'),
-      finalAligned:near(box(plate),box(selected())), count:group.querySelectorAll('[data-selection-motion-plate]').length,
+      finalAligned:near(box(plate),indicatorBox(selected())), count:group.querySelectorAll('[data-selection-motion-plate]').length,
       stationaryLabels:[...items,...group.querySelectorAll('[data-selection-motion-label]')].every(item=>getComputedStyle(item).transform==='none'),
       isolated:other.filter(([node])=>node.isConnected).every(([node,old])=>node.closest('[data-selection-motion]').querySelector('[data-selection-motion-selected]')===old), samples };
   });
@@ -99,9 +120,17 @@ async function resize(page, selector, name) {
   for (const width of [1400,1024,780]) {
     await page.setViewportSize({width,height:1000}); await frames(page,3); await settle(page);
     const result=await page.locator(selector).first().evaluate(group=>{
-      const a=group.querySelector('[data-selection-motion-plate]').getBoundingClientRect(),b=group.querySelector('[data-selection-motion-selected]').getBoundingClientRect();
-      return { plate:{x:a.x,y:a.y,width:a.width,height:a.height},target:{x:b.x,y:b.y,width:b.width,height:b.height}, aligned:['x','y','width','height'].every(key=>Math.abs(a[key]-b[key])<1.1), rows:new Set([...group.querySelectorAll('[data-selection-motion-item]')].map(item=>Math.round(item.getBoundingClientRect().y))).size };
+      const a=group.querySelector('[data-selection-motion-plate]').getBoundingClientRect(),selected=group.querySelector('[data-selection-motion-selected]'),b=selected.getBoundingClientRect();
+      let expected={x:b.x,y:b.y,width:b.width,height:b.height};
+      if(group.dataset.selectionMotionVariant==='underline') {
+        const rects=[],walk=document.createTreeWalker(selected,NodeFilter.SHOW_TEXT);
+        while(walk.nextNode()){if(!walk.currentNode.textContent.trim())continue;const range=document.createRange();range.selectNodeContents(walk.currentNode);rects.push(range.getBoundingClientRect());}
+        rects.push(...[...selected.querySelectorAll('svg,img')].map(node=>node.getBoundingClientRect()));const visible=rects.filter(r=>r.width>0);
+        expected={x:Math.min(...visible.map(r=>r.left)),y:b.bottom-3,width:Math.max(...visible.map(r=>r.right))-Math.min(...visible.map(r=>r.left)),height:3};
+      }
+      return { variant:group.dataset.selectionMotionVariant, plate:{x:a.x,y:a.y,width:a.width,height:a.height},target:expected, aligned:['x','y','width','height'].every(key=>Math.abs(a[key]-expected[key])<1.1), rows:new Set([...group.querySelectorAll('[data-selection-motion-item]')].map(item=>Math.round(item.getBoundingClientRect().y))).size };
     });
+    assert.equal(result.variant, 'filled', `${name} remains navigation at ${width}px`);
     if(!result.aligned)(report.failures??=[]).push({name:`${name} resize ${width}`, ...result}); report.checks.push({name:`${name} resize`,width,...result}); await shot(page,`${name}-${width}`);
   }
   await page.setViewportSize({width:1400,height:1000}); await frames(page,3);
@@ -135,8 +164,9 @@ try {
   await desktop.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
   for(const [destination,selector] of [['activity','.workspace-tabs'],['settings','.settings-navigation'],['extensions','.extensions-navigation']]) {
     await desktop.locator(`[data-webcodex-action="navigate-${destination}"]`).click();
-    await exercise(desktop,selector,`desktop-${destination}`);
+    await exercise(desktop,selector,`desktop-${destination}`,destination === 'activity' ? 'underline' : 'filled');
     if(destination==='settings'){await midpoint(desktop,selector,'desktop-settings');await resize(desktop,selector,'desktop-settings');await accessibility(desktop,selector,'desktop-settings');}
+    if(destination==='extensions') await resize(desktop,selector,'desktop-extensions');
     await shot(desktop,`desktop-${destination}`);
   }
   report.desktopFixtureWarnings=await desktop.locator('.app-error').allTextContents();
@@ -166,7 +196,8 @@ try {
   await runtime.locator('.app-nav').getByRole('button',{name:/^Work/}).click();
   await runtime.getByRole('radio',{name:/Activity/}).evaluate(node=>node.click());
   await runtime.locator('#window-activity-tab').click();
-  await runtime.getByRole('combobox',{name:'Session filter'}).selectOption({index:1});
+  await runtime.getByRole('combobox',{name:'Session filter'}).click();
+  await runtime.getByRole('option').nth(1).click();
   await runtime.getByRole('button',{name:'View Session record',exact:true}).click();
   await exercise(runtime,'.session-main > .session-view-tabs','runtime-session-views');
   await exercise(runtime,'.inspector .segmented','runtime-inspector');

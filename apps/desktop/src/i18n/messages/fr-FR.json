@@ -1,4 +1,7 @@
 {
+  "selection.label": "Couleur de sélection",
+  "selection.accent": "Accent du thème",
+  "selection.monochrome": "Monochrome",
   "plugins.add": "Ajouter un Tool Plugin natif",
   "plugins.help": "Enregistrez un plugin de confiance. L’enregistrement ne le lance pas. Redémarrez le Runner géré pour appliquer la modification. Les entrées existantes ne sont jamais remplacées.",
   "plugins.id": "ID du Plugin",

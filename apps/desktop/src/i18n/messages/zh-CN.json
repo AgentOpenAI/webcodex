@@ -1,4 +1,7 @@
 {
+  "selection.label": "选中颜色",
+  "selection.accent": "主题强调色",
+  "selection.monochrome": "黑白反色",
   "operation.tunnelConfigUpdate": "正在保存 Tunnel 配置",
   "tunnelConfig.useEnvironment": "清除已保存配置，改用环境变量",
   "tunnelConfig.sourceFile": "当前来源：本机配置文件（优先）",

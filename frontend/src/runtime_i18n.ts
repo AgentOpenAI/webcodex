@@ -1004,6 +1004,8 @@ Object.assign(RUNTIME_ZH_TEXT, {
   "Expand sidebar": "展开侧栏",
   "Preferences": "偏好设置",
   "Theme color": "主题色",
+  "Selected color": "选中配色",
+  "Black and white": "黑白",
   "Accent color": "主题色",
   "Custom color": "自定义颜色",
 });

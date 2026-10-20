@@ -1,8 +1,9 @@
+import { MantineProvider } from "@mantine/core";
 import { act, fireEvent, render as testingRender, screen, waitFor, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { expect, it, vi } from "vitest";
 import type { RuntimeV2Client } from "../src/runtime-v2/api/client.js";
-import { absoluteTime } from "../src/runtime-v2/model/format.js";
+import { absoluteTime, shortId } from "../src/runtime-v2/model/format.js";
 import type { ProjectRow } from "../src/runtime-v2/model/types.js";
 import { ProjectsView } from "../src/runtime-v2/views/ProjectsView.js";
 import { WindowWorkbench } from "../src/runtime-v2/components/WindowWorkbench.js";
@@ -10,7 +11,7 @@ import { WorkView } from "../src/runtime-v2/views/WorkView.js";
 import { UiProvider } from "../src/ui/UiProvider.js";
 import { runtimeOverview, windowDetail } from "./fixtures.js";
 
-const render = (ui: ReactElement) => testingRender(<UiProvider>{ui}</UiProvider>);
+const render = (ui: ReactElement) => testingRender(<UiProvider><MantineProvider env="test">{ui}</MantineProvider></UiProvider>);
 
 function ok(data: unknown) {
   return { ok: true, status: 200, data };
@@ -154,6 +155,10 @@ it("shows active Window work without any Workflow Session and keeps observe call
   fireEvent.click(projectPicker);
   expect(await screen.findByRole("heading", { name: "webcodex-activity-fix" })).toBeTruthy();
   const header = screen.getByRole("heading", { name: "webcodex-activity-fix" }).closest("header");
+  const details = header!.querySelector("details")!;
+  expect(details.querySelector("summary")?.textContent).toBe("Window details");
+  expect(details.open).toBe(false);
+  fireEvent.click(details.querySelector("summary")!);
   expect(header?.textContent).toContain("WebCodex");
   expect(header?.textContent).toContain("apply_text_edits");
   expect(header?.textContent).toContain("Runner ID");
@@ -332,8 +337,8 @@ it("uses exact Session tags to focus contiguous Window call segments", async () 
   expect(screen.queryByRole("tab", { name: /Work Sessions/ })).toBeNull();
   expect(screen.getByRole("tab", { name: "Collaboration" })).toBeTruthy();
 
-  const selector = await screen.findByRole("combobox", { name: "Session filter" }) as HTMLSelectElement;
-  expect(selector.value).toBe("");
+  const selector = await screen.findByRole("combobox", { name: "Session filter" }) as HTMLInputElement;
+  expect(selector.value).toBe("All calls");
   expect(screen.getAllByTestId("window-workflow-step")).toHaveLength(5);
 
   const tags = await screen.findAllByTestId("window-session-tag");
@@ -343,22 +348,24 @@ it("uses exact Session tags to focus contiguous Window call segments", async () 
   expect(tags[2].getAttribute("data-session-tone")).toBe("0");
 
   fireEvent.click(tags[1]);
-  expect(selector.value).toBe(sessionB);
+  expect(selector.value).toBe(`Work Session 2 · ${shortId(sessionB, 14, 6)}`);
   let focusedCalls = screen.getAllByTestId("window-workflow-step");
   expect(focusedCalls).toHaveLength(2);
   expect(focusedCalls.map((call) => call.querySelector("header strong")?.textContent)).toEqual(["get_runtime_status", "apply_text_edits"]);
 
-  fireEvent.change(selector, { target: { value: "" } });
+  fireEvent.click(selector);
+  fireEvent.click(await screen.findByRole("option", { name: "All calls" }));
   expect(screen.getAllByTestId("window-workflow-step")).toHaveLength(5);
 
   const allCalls = screen.getAllByTestId("window-workflow-step");
   fireEvent.click(allCalls[0]);
-  expect(selector.value).toBe(sessionA);
+  expect(selector.value).toBe(`Implement Window tabs · ${shortId(sessionA, 14, 6)}`);
   focusedCalls = screen.getAllByTestId("window-workflow-step");
   expect(focusedCalls).toHaveLength(3);
   expect(focusedCalls.map((call) => call.querySelector("header strong")?.textContent)).toEqual(["read_files", "run_shell", "read_files"]);
 
-  fireEvent.change(selector, { target: { value: sessionB } });
+  fireEvent.click(selector);
+  fireEvent.click(await screen.findByRole("option", { name: /Work Session 2/ }));
   focusedCalls = screen.getAllByTestId("window-workflow-step");
   expect(focusedCalls).toHaveLength(2);
   expect((client.post as unknown as ReturnType<typeof vi.fn>).mock.calls.some(([path]) =>

@@ -9,7 +9,7 @@ const rect = ({ x, y, width, height }: Rect): DOMRect => ({ x, y, left: x, top: 
 const cleanups: (() => void)[] = [];
 afterEach(() => { cleanups.splice(0).forEach(cleanup => cleanup()); document.body.replaceChildren(); });
 
-function fixture({ reduced = false, forced = false, fieldset = false } = {}) {
+function fixture({ reduced = false, forced = false, fieldset = false, variant = "filled" as "filled" | "underline" } = {}) {
   const media = new Map<string, { matches: boolean; addEventListener: ReturnType<typeof vi.fn>; removeEventListener: ReturnType<typeof vi.fn> }>();
   vi.spyOn(window, "matchMedia").mockImplementation(query => {
     const result = { matches: query.includes("reduced") ? reduced : forced, addEventListener: vi.fn(), removeEventListener: vi.fn() };
@@ -36,15 +36,34 @@ function fixture({ reduced = false, forced = false, fieldset = false } = {}) {
     return rect({ x: 0, y: 0, width: 0, height: 0 });
   });
   const cancel = vi.fn();
-  const animate = vi.fn(() => ({ cancel }) as unknown as Animation);
+  const animate = vi.fn(() => ({ cancel, playState: "running" }) as unknown as Animation);
   Object.defineProperty(HTMLElement.prototype, "animate", { configurable: true, value: animate });
-  const controller = createSelectionMotion(group);
+  const controller = createSelectionMotion(group, { variant });
   cleanups.push(controller.destroy);
   const select = (index: number) => { items.forEach((item, i) => item.setAttribute("aria-selected", String(i === index))); controller.update(); };
   return { group, items, boxes, animate, cancel, controller, select, media, setVisual: (value: Rect) => { visual = value; } };
 }
 
 describe("flowing selection motion", () => {
+  it("moves one rounded underline without copying or inverting labels", () => {
+    const { group, select, animate, setVisual } = fixture({ variant: "underline" });
+    const plate = group.querySelector<HTMLElement>("[data-selection-motion-plate]")!;
+    expect(group.dataset.selectionMotionVariant).toBe("underline");
+    expect(plate.style.height).toBe("3px");
+    expect(plate.style.borderRadius).toBe("999px");
+    expect(group.querySelectorAll("[data-selection-motion-label]")).toHaveLength(0);
+    expect(group.querySelector<HTMLElement>("[data-selection-motion-foreground]")!.hidden).toBe(true);
+    select(1);
+    expect(animate).toHaveBeenCalledTimes(1);
+    const [frames, timing] = animate.mock.calls[0] as unknown as [Keyframe[], KeyframeAnimationOptions];
+    expect(timing.duration).toBe(260);
+    expect(frames[0]).toMatchObject({ transform: "translate(4px, 30px)", height: "3px" });
+    expect(frames[2]).toMatchObject({ transform: "translate(80px, 30px)", width: "130px" });
+    setVisual({ x: 40, y: 30, width: 100, height: 3 });
+    select(2);
+    expect((animate.mock.calls[1][0] as Keyframe[])[0]).toMatchObject({ transform: "translate(40px, 30px)", height: "3px" });
+  });
+
   it("keeps one plate, original controls and unique IDs while mirroring only inert visuals", () => {
     const { group, items, controller, animate } = fixture();
     const plate = group.querySelector("[data-selection-motion-plate]");
@@ -188,6 +207,61 @@ describe("flowing selection motion", () => {
     });
     expect(cancel).toHaveBeenCalledTimes(2);
     expect(animate).toHaveBeenCalledTimes(2);
+  });
+
+  it("rechecks paint-time layout without cancelling a valid transition and cancels pending cleanup", () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let sequence = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { frames.set(++sequence, callback); return sequence; });
+    const cancelFrame = vi.spyOn(window, "cancelAnimationFrame").mockImplementation(id => { frames.delete(id); });
+    const flush = () => { const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(0)); };
+    const { select, boxes, group, cancel, controller } = fixture();
+    select(1);
+    flush();
+    expect(cancel).not.toHaveBeenCalled();
+    // A synchronous card update can measure a transient height and return to
+    // the previous observed size before ResizeObserver receives a change.
+    boxes[1].height = 41;
+    controller.update({ animate: false });
+    boxes[1].height = 30;
+    flush();
+    expect(group.querySelector<HTMLElement>("[data-selection-motion-plate]")!.style.height).toBe("30px");
+    expect(frames.size).toBe(1);
+    controller.destroy();
+    expect(cancelFrame).toHaveBeenCalled();
+    expect(frames.size).toBe(0);
+  });
+
+  it("releases a temporary containing block on viewport-width changes with unchanged underline geometry", async () => {
+    const { group, controller } = fixture({ variant: "underline" });
+    controller.destroy(); group.style.position = "";
+    const sheet = document.createElement("style");
+    sheet.textContent = ".resized-tabs { position:static; }";
+    document.head.append(sheet); group.className = "resized-tabs";
+    const responsive = createSelectionMotion(group, { variant: "underline" });
+    expect(group.style.position).toBe("relative");
+    sheet.textContent = ".resized-tabs { position:sticky; }";
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(window.innerWidth + 100);
+    await act(async () => { window.dispatchEvent(new Event("resize")); await new Promise(requestAnimationFrame); });
+    expect(group.style.position).toBe("");
+    expect(getComputedStyle(group).position).toBe("sticky");
+    responsive.destroy(); sheet.remove();
+  });
+
+  it("continues an active selection toward a corrected paint-time destination", () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let sequence = 0;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => { frames.set(++sequence, callback); return sequence; });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(id => { frames.delete(id); });
+    const { select, boxes, animate, setVisual } = fixture();
+    boxes[1].height = 41; select(1);
+    setVisual({ x: 30, y: 3, width: 90, height: 32 });
+    boxes[1].height = 30;
+    const callbacks = [...frames.values()]; frames.clear(); callbacks.forEach(callback => callback(0));
+    expect(animate).toHaveBeenCalledTimes(4);
+    const retarget = animate.mock.calls[2][0] as Keyframe[];
+    expect(retarget[0]).toMatchObject({ transform: "translate(30px, 3px)", height: "32px" });
+    expect(retarget[2]).toMatchObject({ transform: "translate(80px, 3px)", height: "30px" });
   });
 
   it("supports label selectors without duplicating radio controls", () => {

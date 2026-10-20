@@ -1,3 +1,4 @@
+import { selectOption } from "../../test/select-option";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../i18n/locale";
@@ -72,7 +73,7 @@ describe("explicit environment setup", () => {
     const advanced = screen.getByText("Advanced deployment options").closest("details")!;
     expect(advanced).not.toHaveAttribute("open");
     fireEvent.click(screen.getByText("Advanced deployment options"));
-    fireEvent.change(screen.getByLabelText("Background startup"),{target:{value:"system"}});
+    selectOption(screen.getByRole("combobox", { name: "Background startup" }), "system");
     action(container,"configure-local");
     await waitFor(()=>expect(api.configureEnvironment).toHaveBeenCalledTimes(2));
     expect(api.configureEnvironment.mock.calls[1][0].serviceScope).toBe("system");
@@ -101,7 +102,7 @@ describe("explicit environment setup", () => {
     const advanced = screen.getByText("Advanced deployment options").closest("details")!;
     expect(advanced).not.toHaveAttribute("open");
     fireEvent.click(screen.getByText("Advanced deployment options"));
-    fireEvent.change(screen.getByLabelText("Background startup"), { target: { value: "system" } });
+    selectOption(screen.getByRole("combobox", { name: "Background startup" }), "system");
     action(container, "configure-local");
     await waitFor(() => expect(api.configureEnvironment).toHaveBeenCalledWith(expect.objectContaining({
       mode: "create",

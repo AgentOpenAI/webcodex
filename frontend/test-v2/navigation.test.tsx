@@ -2,6 +2,7 @@ import { fireEvent, render as testingRender, screen, waitFor } from "@testing-li
 import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RUNTIME_CREDENTIAL_SESSION_KEY } from "../src/runtime_storage.js";
+import { shortId } from "../src/runtime-v2/model/format.js";
 import { App } from "../src/runtime-v2/App.js";
 import { UiProvider } from "../src/ui/UiProvider.js";
 import { runtimeOverview, sessionDetail, sessionItem, windowDetail } from "./fixtures.js";
@@ -138,7 +139,7 @@ describe("Runtime v2 navigation", () => {
     }));
     await openProjectSession();
     expect(await screen.findByTestId("window-primary-workbench")).toBeTruthy();
-    await waitFor(() => expect((screen.getByRole("combobox", { name: "Session filter" }) as HTMLSelectElement).value).toBe(sessionId));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Session filter" }) as HTMLInputElement).value).toBe(`Session · ${shortId(sessionId, 14, 6)}`));
     expect(screen.getByText("No calls in this Session")).toBeTruthy();
     const selectedRow = screen.getByTestId("work-window-row-" + key);
     expect(selectedRow.getAttribute("aria-current")).toBe("true");

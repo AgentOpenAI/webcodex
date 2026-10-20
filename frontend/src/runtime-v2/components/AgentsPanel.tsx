@@ -34,7 +34,7 @@ export function AgentsPanel({ client, language, onUnauthorized, selectedAgentId,
     : state.conversations;
   const [section, setSection] = useState<"inbox" | "conversations" | "profile">("inbox");
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, section);
+  useFlowingSelection(selectionRef, section, { variant: "underline" });
   const inventoryPending = state.availability === "idle" || state.availability === "loading";
   const inventoryUnavailable = inventoryPending || state.availability === "error";
   const inventoryNotice = inventoryPending ? "Loading Agents…" : "Agents could not be loaded. Refresh to retry.";

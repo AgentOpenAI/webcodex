@@ -1,0 +1,14 @@
+/* Local appearance only; Host theme and display mode remain authoritative. */
+:root {
+  --selection-motion-base-ink: var(--ui-text-primary);
+  --selection-motion-fill: var(--ui-selection-fill);
+  --selection-motion-ink: var(--ui-selection-ink);
+}
+.file-navigator > .ui-select { width: 0; flex: 1; }
+@media (max-width: 360px) { .file-navigator > .ui-select { flex-basis: 100%; width: 100%; } }
+.card-selection-preference { display: grid; gap: 6px; padding: 8px 0; font-size: 12px; color: inherit; }
+.card-selection-preference select { min-height: 34px; max-width: 100%; font: inherit; }
+.card-appearance { position: relative; font-size: 12px; }
+.card-appearance > summary { cursor: pointer; padding: 6px 8px; border-radius: 7px; }
+.card-appearance > .card-selection-preference { position: absolute; right: 0; top: 100%; z-index: 10; min-width: 180px; padding: 12px; border: 1px solid var(--card-border, var(--line, #888)); border-radius: 8px; background: Canvas; color: CanvasText; box-shadow: 0 8px 24px #0002; }
+@media (pointer: coarse) { .card-appearance > summary, .card-selection-preference select, .ui-select-trigger { min-height: 44px; } }

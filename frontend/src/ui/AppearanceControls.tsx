@@ -1,7 +1,10 @@
-import { ActionIcon, ColorSwatch, Group, Popover, Stack, Text, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, ColorSwatch, Group, Popover, SegmentedControl, Stack, Text, TextInput, Tooltip } from "@mantine/core";
 import { Check, Monitor, MoonStar, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ACCENT_PRESETS, normalizeAccent } from "./accent.js";
+import { useSelectionPreference } from "./useSelectionPreference.js";
+import { useFlowingSelection } from "./useFlowingSelection.js";
+import type { SelectionColorMode } from "./selectionPreference.js";
 
 type Props = {
   accent: string;
@@ -15,6 +18,9 @@ type Props = {
 export function AppearanceControls({ accent, appearance, onAccentChange, onAppearanceCycle, translate: t = value => value }: Props) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [customColor, setCustomColor] = useState(accent);
+  const selection = useSelectionPreference();
+  const selectionRef = useRef<HTMLDivElement>(null);
+  useFlowingSelection(selectionRef, selection.mode, { itemSelector: ".mantine-SegmentedControl-label", selectedSelector: ".mantine-SegmentedControl-label[data-active]" });
   useEffect(() => setCustomColor(accent), [accent]);
   const appearanceLabel = `${t("Appearance")} · ${t(appearance === "system" ? "System" : appearance === "light" ? "Light" : "Dark")}`;
   return <>
@@ -48,6 +54,12 @@ export function AppearanceControls({ accent, appearance, onAccentChange, onAppea
               const normalized = normalizeAccent(value);
               if (normalized) onAccentChange(normalized);
             }} onBlur={() => setCustomColor(accent)} />
+          <Stack gap="xs">
+            <Text size="sm" fw={600}>{t("Selected color")}</Text>
+            <SegmentedControl<SelectionColorMode> ref={selectionRef} value={selection.mode} onChange={selection.setMode}
+              aria-label={t("Selected color")} styles={{ indicator: { display: "none" } }} withItemsBorders={false}
+              data={[{ value: "accent", label: t("Theme color") }, { value: "monochrome", label: t("Black and white") }]} />
+          </Stack>
         </Stack>
       </Popover.Dropdown>
     </Popover>

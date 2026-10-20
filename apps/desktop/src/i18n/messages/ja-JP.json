@@ -1,4 +1,7 @@
 {
+  "selection.label": "選択色",
+  "selection.accent": "テーマのアクセント",
+  "selection.monochrome": "モノクロ",
   "plugins.add": "ネイティブ Tool Plugin を追加",
   "plugins.help": "信頼できるネイティブ Tool Plugin をこの Runner に登録します。保存だけでは起動しません。Runner を再起動すると反映されます。既存の登録は上書きされません。",
   "plugins.id": "Plugin ID",

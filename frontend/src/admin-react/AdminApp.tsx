@@ -1,3 +1,4 @@
+import { useFlowingSelection } from "../ui/useFlowingSelection.js";
 import { displayProjectPath, projectPresentationName } from "../ui/projectPresentation.js";
 import { Alert, Badge, Button, Checkbox, Menu, Modal, PasswordInput, Switch, Table, TextInput } from "@mantine/core";
 import { Activity, AlertTriangle, Ellipsis, Folder, LayoutDashboard, LockKeyhole, Plus, RefreshCw, Users } from "lucide-react";
@@ -136,6 +137,10 @@ export function AdminApp() {
   const [error, setError] = useState("");
   const [auto, setAuto] = useState(true);
   const [activeSection, setActiveSection] = useState("overview-section");
+  const navigationRef = useRef<HTMLElement | null>(null);
+  useFlowingSelection(navigationRef, activeSection, {
+    variant: "filled", itemSelector: "a", selectedSelector: "a[aria-current]",
+  });
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [fields, setFields] = useState<FormFields>(emptyFields);
   const [dialogError, setDialogError] = useState("");
@@ -255,8 +260,9 @@ export function AdminApp() {
       frame = 0;
       const ids = ["overview-section", "devices-section", "projects-section", "diagnostics-section"];
       const sections = ids.map((id) => document.getElementById(id)).filter((element): element is HTMLElement => !!element);
-      const toolbar = document.querySelector(".workspace-toolbar")?.getBoundingClientRect();
-      const boundary = Math.max(110, (toolbar?.bottom || 0) + 24);
+      // Native anchor scrolling rounds its offset, while section layout retains
+      // fractional CSS pixels. Keep the intended landing point selected.
+      const boundary = (window.innerWidth <= 700 ? 80 : 32) + 1;
       const atBottom = window.scrollY > 0 && window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 2;
       const current = atBottom ? sections.at(-1) : sections.filter((section) => section.getBoundingClientRect().top <= boundary).at(-1) || sections[0];
       if (current) setActiveSection(current.id);
@@ -356,7 +362,7 @@ export function AdminApp() {
   return <div className="admin-shell ui-canvas">
     <aside className="admin-rail ui-surface" aria-label="WebCodex Admin navigation">
       <div className="product-identity"><BrandMark /><div><strong>WebCodex</strong><span>Admin console</span></div></div>
-      <nav className="section-nav" aria-label="Dashboard sections">
+      <nav ref={navigationRef} className="section-nav" aria-label="Dashboard sections">
         {navigation.map(([id, label, Icon]) => <a key={id} href={`#${id}`} aria-current={activeSection === id ? "location" : undefined}
           aria-label={label} title={label} onClick={() => setActiveSection(id)}>
           <Icon size={18} aria-hidden="true" /><span>{label}</span></a>)}

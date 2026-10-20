@@ -8,6 +8,8 @@ import {
   persistAccentPreference,
 } from "../../../../frontend/src/ui/accent";
 
+import { applySelectionPreference, loadSelectionPreference, persistSelectionPreference, SELECTION_CHANGE_EVENT, SELECTION_STORAGE_KEY, type SelectionColorMode } from "../../../../frontend/src/ui/selectionPreference";
+
 export const APPEARANCE_STORAGE_KEY = "webcodex.desktop.appearance.v1";
 const APPEARANCE_CHANGE_EVENT = "webcodex:appearance-change";
 export const APPEARANCES = ["system", "light", "dark"] as const;
@@ -24,6 +26,7 @@ function storedAppearance(): Appearance {
 
 export function useAppearance() {
   const [appearance, setAppearanceState] = useState<Appearance>(storedAppearance);
+  const [selectionColor, setSelectionColorState] = useState(loadSelectionPreference);
   const [accent, setAccentState] = useState(loadAccentPreference);
 
   useEffect(() => {
@@ -44,6 +47,18 @@ export function useAppearance() {
     window.addEventListener("storage", sync);
     return () => { window.removeEventListener(ACCENT_CHANGE_EVENT, sync); window.removeEventListener("storage", sync); };
   }, []);
+
+  useEffect(() => {
+    const sync = (event: Event) => {
+      if (event instanceof StorageEvent && event.key !== SELECTION_STORAGE_KEY && event.key !== null) return;
+      const mode = event instanceof StorageEvent ? loadSelectionPreference() : (event as CustomEvent<SelectionColorMode>).detail;
+      setSelectionColorState(mode === "monochrome" ? "monochrome" : "accent");
+    };
+    window.addEventListener(SELECTION_CHANGE_EVENT, sync);
+    window.addEventListener("storage", sync);
+    return () => { window.removeEventListener(SELECTION_CHANGE_EVENT, sync); window.removeEventListener("storage", sync); };
+  }, []);
+  useEffect(() => { applySelectionPreference(selectionColor); }, [selectionColor]);
 
   useEffect(() => {
     const media = typeof window.matchMedia === "function"
@@ -82,5 +97,9 @@ export function useAppearance() {
     persistAccentPreference(color);
   };
 
-  return { appearance, setAppearance, accent, setAccent };
+  const setSelectionColor = (mode: SelectionColorMode) => {
+    setSelectionColorState(mode);
+    persistSelectionPreference(mode);
+  };
+  return { appearance, setAppearance, accent, setAccent, selectionColor, setSelectionColor };
 }

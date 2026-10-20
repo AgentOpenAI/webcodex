@@ -1,4 +1,6 @@
-import { act, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { UiProvider } from "../src/ui/UiProvider.js";
+import { act, fireEvent, render as testingRender, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeV2Client } from "../src/runtime-v2/api/client.js";
 import { SessionExecution } from "../src/runtime-v2/components/SessionExecution.js";
@@ -6,6 +8,8 @@ import { workItemFromRecent } from "../src/runtime-v2/model/work.js";
 import type { SessionWorkspaceState } from "../src/runtime-v2/state/useSessionWorkspace.js";
 import { useSessionWorkspace } from "../src/runtime-v2/state/useSessionWorkspace.js";
 import { recentSession, sessionDetail, sparseActivitySessionDetail } from "./fixtures.js";
+
+const render = (ui: ReactElement) => testingRender(ui, { wrapper: UiProvider });
 
 function workspace(overrides: Partial<SessionWorkspaceState> = {}): SessionWorkspaceState {
   return {

@@ -1,0 +1,167 @@
+{
+  "date": "2026-10-20",
+  "issue": "https://github.com/yyjeqhc/webcodex/issues/1211",
+  "base_commit": "f73e99cc1532bdf88dba12191f1835372dbb2377",
+  "product_content_sha256": "6d46f88ccc457af3032defda136f87e1210391b275dbf6c48c792e084ea86366",
+  "product_content_algorithm": "SHA-256 of JSON (sorted keys; default Python JSON separators) mapping each relative file path to its SHA-256 under frontend/src, frontend/dist, apps/desktop/src and src/mcp*_app.html",
+  "asset_sha256": {
+    "apps/desktop/dist/assets/index-Boqig4K8.js": "8b6b9138229d05f8c376ff70b330ef1d6ad68191517a34fd281920341aaea8c9",
+    "apps/desktop/dist/assets/index-DQ1u7IlE.css": "bbd232c868f215dad3455d7784395095d0c08a58ae10a5788ad2e3483808e707",
+    "apps/desktop/dist/index.html": "45c5b16b119a3f81726c550fad233334abe023f6506770fa74ee1e74b01f595f",
+    "frontend/dist/admin.css": "5d3e5499fa8094835e1b8bcc4ef7c9e36cc6db063b0ee06726d923325ba0e4a4",
+    "frontend/dist/admin.js": "a944bb9deb61fab7d94d83cf747252c9c61b8552edcfd43f6deed450406ea316",
+    "frontend/dist/app.js": "bc0b744f342ad92da7bfff4fc1d5875ef4bff7ac596456635eeeb042489acd37",
+    "frontend/dist/styles.css": "ef83d7a5414a5a6e720528c48b8c997d172f9c2b310f0e443b271e6a47e24216",
+    "src/mcp_spreadsheet_app.html": "37deb570e26aef8fe0fc853b6171b8b288313869aff9179f65862d6d68f884fa",
+    "src/mcp_work_result_app.html": "a52260f156c448822a07a4a28e7f2e9a9c082573f62dc56e825c35cd2c11fcc4",
+    "src/mcp_workbench_app.html": "a4b305f17b96755a86c33081510ec07f7e56a39282022896c30979d9bd5f6635"
+  },
+  "checks": {
+    "frontend_typecheck": "passed",
+    "desktop_typecheck": "passed",
+    "frontend_component_tests": 260,
+    "desktop_component_tests": 753,
+    "frontend_node_tests": 105,
+    "docx_node_tests": 23,
+    "mcp_node_tests": 582,
+    "shipped_card_appearance_tests": 4,
+    "rust_registry_tests": 5,
+    "rust_work_result_tests": 15,
+    "rust_resource_capability_tests": 1,
+    "generated_asset_consistency": "passed",
+    "rust_formatting": "passed",
+    "desktop_form_css_contract": "passed",
+    "markdown_links": "passed",
+    "motion_browser_light_checks": 30,
+    "motion_browser_dark_checks": 30,
+    "runtime_admin_browser_checks": 192,
+    "runtime_admin_browser_screenshots": 72,
+    "mcp_browser_cases": 48,
+    "mobile_runtime_layout_checks": 208,
+    "mobile_runtime_layout_screenshots": 56
+  },
+  "browser_matrix": {
+    "runtime_admin_widths": [
+      390,
+      1440
+    ],
+    "mcp_widths": [
+      320,
+      390,
+      800,
+      1440
+    ],
+    "themes": [
+      "light",
+      "dark"
+    ],
+    "selection_modes": [
+      "accent",
+      "monochrome"
+    ],
+    "fixtures": "public synthetic data; actual production bundles and shipped HTML; not a real MCP Host",
+    "mobile_runtime_viewports": [
+      [
+        625,
+        825
+      ],
+      [
+        390,
+        844
+      ],
+      [
+        320,
+        568
+      ],
+      [
+        700,
+        600
+      ]
+    ]
+  },
+  "native_linux": {
+    "renderer": "WebKitGTK / Tauri native source preview",
+    "widths": [
+      1180,
+      800
+    ],
+    "isolated_temporary_server_runner": true,
+    "listener_ownership_verified": true,
+    "viewer_only": true,
+    "tunnel": null,
+    "all_owned_processes_cleaned": true,
+    "remaining_owned_process_count": 0,
+    "build_info": {
+      "schema_version": 1,
+      "binary": "webcodex-desktop",
+      "version": "0.5.0",
+      "git_commit": "7f847d00524f",
+      "git_dirty": true,
+      "built_at": "1792483953",
+      "target": "x86_64-unknown-linux-gnu",
+      "architecture": "x86_64",
+      "desktop_runtime_contract": {
+        "min_generation": 1,
+        "max_generation": 1
+      },
+      "agent_protocol_generation": null,
+      "environment_data_format": 1
+    },
+    "desktop_executable_sha256": "749e71086b61b25fa03feaa16c3cc8cf7ce87f0746d9ec5472e4eb47e9f46b7e",
+    "interactions": [
+      "open Settings with pale filled navigation categories",
+      "open selected-color popup with pale accent selection",
+      "ArrowDown/Enter selects monochrome",
+      "select dark theme",
+      "ArrowUp/Escape cancels without changing monochrome",
+      "resize1180 to800 with filled category grid"
+    ],
+    "provenance_limit": "Native binaries carry the preceding PR head plus dirty correction state. Desktop UI assets match the recorded corrected candidate."
+  },
+  "unverified": [
+    "real ChatGPT Host card rendering",
+    "Windows/macOS native WebViews",
+    "installer/release acceptance",
+    "post-submission CI"
+  ],
+  "deployment": "Persistent test activation is separately authorized and recorded locally. Stable environment and Tunnel configuration are outside this source change.",
+  "source_parent_commit": "65f67ebb25f323e1eb6c592fec9353506a962e2d",
+  "source_state": "Runtime nested page scrolling/footer correction on source_parent_commit; current Runtime checks rerun. Unchanged Desktop/MCP/native/Rust evidence retained.",
+  "correction_regressions": [
+    "Pale accent background and readable accent ink; previous candidate fails",
+    "Desktop Settings/Extensions remain filled navigation across vertical and responsive grid layouts; previous candidate fails",
+    "Committed and keyboard-highlighted Mantine options use local selection palette",
+    "Horizontal content rows retain underline selection",
+    "Mobile content and navigation occupy disjoint viewport rows with matching scrollbar gutters",
+    "Collapsed Window details omit opaque key; expanded exact identity and clipboard retained",
+    "One whole-page mobile scroll owner and actual wheel routing on Overview/Projects/Agents",
+    "No child page gutter, themed thin scrollbar and flat footer without whole-strip hover",
+    "Final diagnostics/Project/Agent actions reachable; desktop scroll owner restored after resize"
+  ],
+  "follow_up_issue": "https://github.com/yyjeqhc/webcodex/issues/1215",
+  "mobile_baseline_reproduction": {
+    "source": "4ad77748",
+    "width": 625,
+    "content_bottom": 1081.140625,
+    "navigation_top": 760,
+    "overlapping": true,
+    "summary_contains_short_id": true
+  },
+  "follow_up_issues": [
+    "https://github.com/yyjeqhc/webcodex/issues/1215",
+    "https://github.com/yyjeqhc/webcodex/issues/1216"
+  ],
+  "nested_scroll_reproduction": {
+    "source": "65f67ebb",
+    "viewport": [
+      625,
+      825
+    ],
+    "main_client_height": 693,
+    "main_scroll_height": 727,
+    "page_client_height": 695,
+    "page_scroll_height": 2013,
+    "both_overflow": "auto",
+    "both_gutters": "stable"
+  }
+}

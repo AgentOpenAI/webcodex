@@ -32,6 +32,7 @@ import {
   normalizeAccent,
   persistAccentPreference,
 } from "../ui/accent.js";
+import { useFlowingSelection } from "../ui/useFlowingSelection.js";
 import { locateSession } from "./api/sessions.js";
 import { useProjects } from "./state/useProjects.js";
 import { projectFamilyId } from "../ui/projectPresentation.js";
@@ -93,6 +94,11 @@ export function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false);
   const sessionLocator = useRef<AbortController | null>(null);
+  const navigationRef = useRef<HTMLElement | null>(null);
+  const mobileNavigationRef = useRef<HTMLElement | null>(null);
+  const navigationSelection = { variant: "filled", itemSelector: "button", selectedSelector: "button[aria-current]" } as const;
+  useFlowingSelection(navigationRef, view, navigationSelection);
+  useFlowingSelection(mobileNavigationRef, view, navigationSelection);
 
   if (token) client.setToken(token);
   else client.clearToken();
@@ -295,7 +301,7 @@ export function App() {
           </IconButton>
         </div>
 
-        <nav aria-label={translate("Workspace views", language)}>
+        <nav ref={navigationRef} aria-label={translate("Workspace views", language)}>
           <button className={"nav-button " + (view === "work" ? "active" : "")} type="button" onClick={openWork} aria-current={view === "work" ? "page" : undefined} title={translate("Work", language)}>
             <span className="nav-icon"><BriefcaseBusiness size={18} /></span>
             <span className="nav-label">{translate("Work", language)}</span>
@@ -388,11 +394,13 @@ export function App() {
         onOpenRecord={openSessionRecord} onUnauthorized={handleUnauthorized}
       />}
 
-      <nav className="mobile-primary-nav ui-glass" aria-label={translate("Workspace views", language)}>
-        <button className={view === "work" ? "active" : ""} type="button" onClick={openWork} aria-current={view === "work" ? "page" : undefined}><BriefcaseBusiness size={18} /><span>{translate("Work", language)}</span></button>
-        <button className={view === "projects" ? "active" : ""} type="button" onClick={() => setView("projects")} aria-current={view === "projects" ? "page" : undefined}><FolderKanban size={18} /><span>{translate("Projects", language)}</span></button>
-        <button className={view === "runtime" ? "active" : ""} type="button" onClick={() => setView("runtime")} aria-current={view === "runtime" ? "page" : undefined}><Server size={18} /><span>{translate("Runtime", language)}</span></button>
-      </nav>
+      <div className="mobile-navigation-dock">
+        <nav ref={mobileNavigationRef} className="mobile-primary-nav" aria-label={translate("Workspace views", language)}>
+          <button className={view === "work" ? "active" : ""} type="button" onClick={openWork} aria-current={view === "work" ? "page" : undefined}><BriefcaseBusiness size={18} /><span>{translate("Work", language)}</span></button>
+          <button className={view === "projects" ? "active" : ""} type="button" onClick={() => setView("projects")} aria-current={view === "projects" ? "page" : undefined}><FolderKanban size={18} /><span>{translate("Projects", language)}</span></button>
+          <button className={view === "runtime" ? "active" : ""} type="button" onClick={() => setView("runtime")} aria-current={view === "runtime" ? "page" : undefined}><Server size={18} /><span>{translate("Runtime", language)}</span></button>
+        </nav>
+      </div>
     </div>
   );
 }

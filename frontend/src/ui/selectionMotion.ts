@@ -1,4 +1,4 @@
-export type SelectionMotionOptions = { itemSelector?: string; selectedSelector?: string };
+export type SelectionMotionOptions = { itemSelector?: string; selectedSelector?: string; variant?: "filled" | "underline" };
 type Box = { x: number; y: number; width: number; height: number };
 type Controller = { update(options?: { animate?: boolean }): void; destroy(): void };
 
@@ -11,6 +11,8 @@ function copyVisual(node: Node, doc: Document): Node | null {
   if (node.nodeType === 3) return doc.createTextNode(node.textContent ?? "");
   if (node.nodeType !== 1) return null;
   const source = node as Element;
+  // Transient shortcut hints keep their original hover/focus visibility.
+  if (source.hasAttribute("data-selection-motion-skip")) return null;
   if (/^(input|select|textarea|script|style|iframe|object)$/i.test(source.localName)) return null;
   const svg = source.namespaceURI === svgNamespace;
   const target = svg ? doc.createElementNS(svgNamespace, source.localName) : doc.createElement("span");
@@ -51,6 +53,7 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
   }
   const itemSelector = options.itemSelector ?? '[role="tab"], button';
   const selectedSelector = options.selectedSelector ?? '[aria-selected="true"], [aria-pressed="true"], .active';
+  const variant = options.variant ?? "filled";
   const originalPosition = group.style.position;
   let ownsPosition = view.getComputedStyle(group).position === "static";
   if (ownsPosition) group.style.position = "relative";
@@ -66,14 +69,18 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
     element.setAttribute("inert", "");
   }
   group.dataset.selectionMotion = "";
+  group.dataset.selectionMotionVariant = variant;
   group.append(plate, foreground, origin);
   let items: HTMLElement[] = [];
   let target: Box | null = null;
+  let selectedItem: HTMLElement | undefined;
   let radius = "0px";
   let animations: Animation[] = [];
   let destroyed = false;
   let rebuilding = false;
   let pendingFrame = 0;
+  let verificationFrame = 0;
+  let viewportWidth = view.innerWidth;
   const reduced = view.matchMedia?.("(prefers-reduced-motion: reduce)");
   const forced = view.matchMedia?.("(forced-colors: active)");
   const observer = new view.MutationObserver(records => {
@@ -107,6 +114,32 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
     return { x: bounds.left - zero.left, y: bounds.top - zero.top, width: bounds.width, height: bounds.height };
   }
 
+  function indicatorBox(element: HTMLElement): Box {
+    const box = localBox(element);
+    if (variant === "filled") return box;
+    // Measure actual text/icons, not a full-width button's empty padding.
+    const bounds: DOMRect[] = [];
+    const walker = doc.createTreeWalker(element, 4);
+    while (walker.nextNode()) {
+      if (!walker.currentNode.textContent?.trim()) continue;
+      const range = doc.createRange();
+      range.selectNodeContents(walker.currentNode);
+      if (typeof range.getBoundingClientRect === "function") {
+        const rect = range.getBoundingClientRect();
+        if (rect.width > 0) bounds.push(rect);
+      }
+    }
+    for (const icon of element.querySelectorAll("svg,img")) {
+      const rect = icon.getBoundingClientRect();
+      if (rect.width > 0) bounds.push(rect);
+    }
+    const zero = origin.getBoundingClientRect();
+    const style = view!.getComputedStyle(element);
+    const start = bounds.length ? Math.min(...bounds.map(rect => rect.left)) - zero.left : box.x + (parseFloat(style.paddingLeft) || 0);
+    const end = bounds.length ? Math.max(...bounds.map(rect => rect.right)) - zero.left : box.x + box.width - (parseFloat(style.paddingRight) || 0);
+    return { x: Math.max(box.x, start), y: box.y + box.height - 3, width: Math.max(0, Math.min(box.x + box.width, end) - Math.max(box.x, start)), height: 3 };
+  }
+
   function frame(box: Box): Keyframe {
     return { transform: `translate(${box.x}px, ${box.y}px)`, width: `${box.width}px`, height: `${box.height}px` };
   }
@@ -132,6 +165,7 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
     for (const item of items) {
       item.dataset.selectionMotionItem = "";
       item.toggleAttribute("data-selection-motion-selected", item.matches(selectedSelector));
+      if (variant === "underline") continue;
       const box = localBox(item);
       const computed = view!.getComputedStyle(item);
       const mirror = doc.createElement("span");
@@ -166,9 +200,9 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
     const nextItems = Array.from(group.querySelectorAll<HTMLElement>(itemSelector))
       .filter(item => !item.closest("[data-selection-motion-overlay]"));
     const selected = nextItems.find(item => item.matches(selectedSelector));
-    const next = selected ? localBox(selected) : null;
+    const next = selected ? indicatorBox(selected) : null;
     const previous = target && !plate.hidden ? localBox(plate) : null;
-    const unchanged = !!next && !!target && sameBox(next, target);
+    const unchanged = selected === selectedItem && !!next && !!target && sameBox(next, target);
     // Preserve an in-flight animation when a duplicate React/observer update
     // sees the same selection. A layout/theme update explicitly snaps instead.
     if (unchanged && animate) {
@@ -179,10 +213,12 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
     cancelAnimations();
     rebuildVisuals(nextItems);
     target = next;
+    selectedItem = selected;
     plate.hidden = foreground.hidden = !next || next.width <= 0 || next.height <= 0;
+    if (variant === "underline") foreground.hidden = true;
     if (next && selected) {
       Object.assign(plate.style, frame(next));
-      radius = view!.getComputedStyle(selected).borderRadius || "0px";
+      radius = variant === "underline" ? "999px" : view!.getComputedStyle(selected).borderRadius || "0px";
       // Native radio labels often put the visible surface on their child span.
       const surface = selected.lastElementChild;
       if (surface instanceof view!.HTMLElement && (!radius || /^0(?:px)?$/.test(radius))) {
@@ -202,14 +238,25 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
         const settle = { x: next.x - next.width * stretchX / 2, y: next.y - next.height * stretchY / 2,
           width: next.width * (1 + stretchX), height: next.height * (1 + stretchY) };
         const timing: KeyframeAnimationOptions = { duration, easing: "cubic-bezier(.2,.75,.25,1)", fill: "none" };
-        animations = [
-          plate.animate([frame(previous), { ...frame(settle), offset: .72 }, frame(next)], timing),
-          foreground.animate([{ clipPath: clip(previous) }, { clipPath: clip(settle), offset: .72 }, { clipPath: clip(next) }], timing),
-        ];
+        animations = [plate.animate([frame(previous), { ...frame(settle), offset: .72 }, frame(next)], timing)];
+        if (variant === "filled") animations.push(foreground.animate([{ clipPath: clip(previous) }, { clipPath: clip(settle), offset: .72 }, { clipPath: clip(next) }], timing));
       }
     }
     rebuilding = false;
     observe();
+    // Card hosts and responsive grids can finish layout after a synchronous
+    // render/update, returning to the previously observed size before RO runs.
+    // Check once at paint without cancelling motion whose destination is valid.
+    if (!verificationFrame) verificationFrame = view!.requestAnimationFrame(() => {
+      verificationFrame = 0;
+      if (destroyed) return;
+      const current = items.find(item => item.matches(selectedSelector));
+      if (current && target && !sameBox(indicatorBox(current), target)) {
+        // If selection itself reflows the card, continue from the visible plate
+        // toward the corrected destination instead of cancelling its movement.
+        update({ animate: animations.some(animation => animation.playState === "running" || animation.playState === "paused") });
+      }
+    });
   }
 
   function scheduleSnap() {
@@ -224,10 +271,14 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
     // Inline Hosts resize iframe height when a panel opens. Preserve motion if
     // the selected control has not reflowed; real responsive changes still snap.
     const selected = items.find(item => item.matches(selectedSelector));
-    if (!selected || !target || !sameBox(localBox(selected), target)) scheduleSnap();
+    const widthChanged = viewportWidth !== view!.innerWidth;
+    viewportWidth = view!.innerWidth;
+    // A text-width underline can keep identical geometry across a breakpoint
+    // while its container changes from a static grid back to sticky navigation.
+    if (widthChanged || !selected || !target || !sameBox(indicatorBox(selected), target)) scheduleSnap();
   }
 
-  theme.observe(doc.documentElement, { attributes: true, attributeFilter: ["class", "style", "lang", "data-mantine-color-scheme", "data-theme", "data-resolved-theme", "data-display-mode"] });
+  theme.observe(doc.documentElement, { attributes: true, attributeFilter: ["class", "style", "lang", "data-mantine-color-scheme", "data-theme", "data-resolved-theme", "data-display-mode", "data-selection-color"] });
   if (doc.body !== group) theme.observe(doc.body, { attributes: true, attributeFilter: ["class", "style", "lang", "data-theme"] });
   reduced?.addEventListener("change", scheduleSnap);
   forced?.addEventListener("change", scheduleSnap);
@@ -244,6 +295,7 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
       theme.disconnect();
       cancelAnimations();
       view.cancelAnimationFrame(pendingFrame);
+      view.cancelAnimationFrame(verificationFrame);
       reduced?.removeEventListener("change", scheduleSnap);
       forced?.removeEventListener("change", scheduleSnap);
       view.removeEventListener("resize", viewportResize);
@@ -256,6 +308,7 @@ export function createSelectionMotion(group: HTMLElement, options: SelectionMoti
       foreground.remove();
       origin.remove();
       group.removeAttribute("data-selection-motion");
+      group.removeAttribute("data-selection-motion-variant");
       if (ownsPosition) group.style.position = originalPosition;
     },
   };

@@ -1,5 +1,7 @@
 (() => {
   const el = id => document.getElementById(id);
+  const cardControls = WebCodexSelectionMotion.initializeCardControls(el('selectionPreference'));
+  const sheetMotion = WebCodexSelectionMotion.createSelectionMotion(el('sheetsMotion'), { itemSelector: '[role=tab]', selectedSelector: '[aria-selected=true]', variant: 'underline' });
   const maxBytes = 5 * 1024 * 1024, chunkBytes = 512 * 1024;
   const pending = new Map();
   let nextId = 0, initialized = false, disposed = false, generation = 0;
@@ -23,7 +25,7 @@
     });
   }
   function theme(context) {
-    if (context?.theme === 'light' || context?.theme === 'dark') document.documentElement.style.colorScheme = context.theme;
+    if (context?.theme === 'light' || context?.theme === 'dark') { document.documentElement.style.colorScheme = context.theme; cardControls.updateTheme(context.theme); }
     if (context?.displayMode) document.documentElement.dataset.mode = context.displayMode;
     const variables = context?.styles?.variables;
     if (variables && typeof variables === 'object') {
@@ -299,7 +301,7 @@
   resizeObserver.observe(el('viewport')); resizeObserver.observe(document.body);
   function teardown() {
     if (disposed) return;
-    disposed = true; generation++; stopWorker();
+    disposed = true; cardControls.destroy(); sheetMotion.destroy(); generation++; stopWorker();
     if (frame !== null) cancelAnimationFrame(frame);
     for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Reader closed')); }
     pending.clear(); clearView(); source = null; resizeObserver.disconnect();

@@ -1,3 +1,4 @@
+import { Select } from "@mantine/core";
 import { Bot, CheckCircle2, MessageSquare, Send, UserRound } from "lucide-react";
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RuntimeV2Client } from "../api/client.js";
@@ -245,30 +246,17 @@ export function WindowCollaboration({ client, windowKey, selectedSessionId, lang
           <div className="window-collaboration-compose-options">
             <label>
               <span>{t("Type")}</span>
-              <select
-                aria-label={t("Message type")}
-                value={messageKind}
-                disabled={sending || uncertain}
-                onChange={event => setMessageKind(event.currentTarget.value as WindowCollaborationKind)}
-              >
-                <option value="guidance">{t("Guidance")}</option>
-                <option value="note">{t("Note")}</option>
-                <option value="question">{t("Question")}</option>
-                <option value="todo">{t("Todo")}</option>
-              </select>
+              <Select aria-label={t("Message type")} value={messageKind} disabled={sending || uncertain}
+                allowDeselect={false} size="xs"
+                onChange={value => { if (value !== null) setMessageKind(value as WindowCollaborationKind); }}
+                data={["guidance", "note", "question", "todo"].map(value => ({ value, label: t(value[0].toUpperCase() + value.slice(1)) }))} />
             </label>
             <label>
               <span>{t("Priority")}</span>
-              <select
-                aria-label={t("Message priority")}
-                value={priority}
-                disabled={sending || uncertain}
-                onChange={event => setPriority(event.currentTarget.value as WindowCollaborationPriority)}
-              >
-                <option value="normal">{t("Normal")}</option>
-                <option value="high">{t("High")}</option>
-                <option value="low">{t("Low")}</option>
-              </select>
+              <Select aria-label={t("Message priority")} value={priority} disabled={sending || uncertain}
+                allowDeselect={false} size="xs"
+                onChange={value => { if (value !== null) setPriority(value as WindowCollaborationPriority); }}
+                data={["normal", "high", "low"].map(value => ({ value, label: t(value[0].toUpperCase() + value.slice(1)) }))} />
             </label>
             <label className="window-collaboration-ack-toggle">
               <input

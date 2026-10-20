@@ -1,3 +1,15 @@
+@import "./selectionPreference.css";
+
+/* Committed and keyboard-highlighted choices share the navigation palette. */
+:is(.mantine-Select-option, .mantine-MultiSelect-option, .mantine-Combobox-option):is([data-checked], [data-combobox-selected]) {
+  background-color: var(--ui-selection-fill); color: var(--ui-selection-ink);
+}
+@media (forced-colors: active) {
+  :is(.mantine-Select-option, .mantine-MultiSelect-option, .mantine-Combobox-option):is([data-checked], [data-combobox-selected]) {
+    background-color: Highlight; color: HighlightText; forced-color-adjust: none;
+  }
+}
+
 /* Shared visual contract for Runtime, Desktop, and Admin. Product styles consume
    these semantic values; the content layer remains opaque and calm. */
 :root {

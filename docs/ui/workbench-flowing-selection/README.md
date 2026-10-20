@@ -1,5 +1,7 @@
 # Workbench surfaces and flowing selection
 
+This records the earlier filled-only baseline. See [selection consistency](../selection-consistency/README.md) for current colors, underline variants, resource versions and cross-surface validation.
+
 The MCP Workbench now uses the same neutral, opaque visual language as Runtime
 WebUI and Desktop. Fullscreen has a compact sidebar and separate content region;
 inline and narrow layouts use top navigation. Runner selection remains an explicit

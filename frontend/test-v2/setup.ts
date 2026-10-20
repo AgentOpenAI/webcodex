@@ -32,3 +32,8 @@ if (!window.ResizeObserver) {
   Object.defineProperty(window, "ResizeObserver", { writable: true, value: ResizeObserverStub });
   Object.defineProperty(globalThis, "ResizeObserver", { writable: true, value: ResizeObserverStub });
 }
+
+// jsdom has no layout scrolling; Mantine scrolls the selected dropdown option.
+if (!Element.prototype.scrollIntoView) {
+  Object.defineProperty(Element.prototype, "scrollIntoView", { configurable: true, value: () => {} });
+}

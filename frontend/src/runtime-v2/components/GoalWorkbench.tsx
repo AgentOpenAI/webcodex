@@ -77,6 +77,7 @@ function WorkSurfaceSwitch({
   const t = (value: string) => translate(value, language);
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   useFlowingSelection(surfaceRef, surface, {
+    variant: "filled",
     itemSelector: ".mantine-SegmentedControl-label",
     selectedSelector: ".mantine-SegmentedControl-label[data-active]",
   });
@@ -91,7 +92,6 @@ function WorkSurfaceSwitch({
       { value: "goals", label: <span className="work-surface-label"><Flag size={13} />{t("Goals")}</span> },
       { value: "windows", label: <span className="work-surface-label"><Activity size={13} />{t("Activity")}</span> },
     ]}
-    fullWidth
     size="xs"
     radius="md"
     withItemsBorders={false}

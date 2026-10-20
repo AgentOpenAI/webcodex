@@ -1,4 +1,4 @@
-import { ActionIcon, TextInput } from "@mantine/core";
+import { ActionIcon, Select, TextInput } from "@mantine/core";
 import { ArrowUpRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { relativeTime } from "../model/format.js";
@@ -65,10 +65,9 @@ export function WorkList({
       <div className="work-list-filters">
         <label className="activity-project-filter">
           <span>{t("Project filter")}</span>
-          <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
-            <option value="">{t("All Projects")}</option>
-            {projectOptions.map(([id, name]) => <option key={id} value={id}>{name} · {id}</option>)}
-          </select>
+          <Select aria-label={t("Project filter")} value={projectFilter} allowDeselect={false}
+            onChange={(value) => setProjectFilter(value ?? "")}
+            data={[{ value: "", label: t("All Projects") }, ...projectOptions.map(([id, name]) => ({ value: id, label: `${name} · ${id}` }))]} />
         </label>
         <TextInput className="work-search-field" type="search" leftSection={<Search size={15} />}
           aria-label={t("Search Sessions")}

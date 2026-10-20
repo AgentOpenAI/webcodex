@@ -33,7 +33,7 @@ export function SessionExecution({ item, location, session, language, onOpenWind
   const signals = activitySignals(session.detail, item);
   const [centerTab, setCenterTab] = useState<"workflow" | "collaboration">("workflow");
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, centerTab);
+  useFlowingSelection(selectionRef, centerTab, { variant: "underline" });
 
   useEffect(() => {
     setCenterTab("workflow");

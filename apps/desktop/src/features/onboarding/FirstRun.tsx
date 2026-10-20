@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { runnerServerAddress } from "../../lib/runner-server-address";
-import { NativeSelect } from "@mantine/core";
+import { Select } from "@mantine/core";
 import { useServiceScopeText } from "../../i18n/service-scope";
 import { FolderOpen, Globe2, Share2 } from "lucide-react";
 import { desktopApi } from "../../lib/desktop-api";
@@ -266,9 +266,9 @@ export function FirstRun({ state, onState, chooseModeFirst = false, onComplete }
             <strong>{scopeText(serviceScope)}</strong>
             <p className="field-help">{scopeText(serviceScope === "user" ? "userHelp" : "systemHelp")}</p>
             <details><summary>{scopeText("advanced")}</summary>
-              <NativeSelect label={scopeText("title")} value={serviceScope} disabled={mutationBusy}
+              <Select label={scopeText("title")} value={serviceScope} disabled={mutationBusy}
                 data={[{value:"user",label:scopeText("user")},{value:"system",label:scopeText("system")}]}
-                onChange={event => { const value=event.currentTarget.value; if (value === "user" || value === "system") setServiceScope(value); }} />
+                allowDeselect={false} onChange={value => { if (value === "user" || value === "system") setServiceScope(value); }} />
             </details>
           </div>
         : <p className="field-help">{t("setup.serviceConsent")}</p>)}

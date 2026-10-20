@@ -79,7 +79,7 @@ export function RuntimeView({
   const t = (value: string) => translate(value, language);
   const [mode, setMode] = useState<RuntimeMode>("overview");
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, mode);
+  useFlowingSelection(selectionRef, mode, { variant: "underline" });
   const [requestedAgentId, setRequestedAgentId] = useState("");
   useEffect(() => {
     if (!target) return;

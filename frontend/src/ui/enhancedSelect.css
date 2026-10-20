@@ -1,0 +1,16 @@
+.ui-select { display: inline-grid; position: relative; min-width: 0; max-width: 100%; vertical-align: middle; }
+.ui-select-source { position: absolute !important; width: 1px !important; height: 1px !important; min-width: 0 !important; min-height: 0 !important; opacity: 0 !important; pointer-events: none !important; overflow: hidden !important; }
+.ui-select-trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; min-height: 36px; padding: 7px 11px; border: 1px solid var(--ui-border, var(--line, #d4d4d4)); border-radius: 10px; background: var(--ui-content, var(--surface, Canvas)); color: var(--ui-text-primary, var(--text, CanvasText)); font: inherit; text-align: start; cursor: pointer; }
+.ui-select-trigger::after { content: ""; flex: 0 0 6px; width: 6px; height: 6px; margin: -3px 2px 0 0; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: .65; }
+.ui-select-value { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ui-select-trigger:hover:not(:disabled) { border-color: var(--ui-border-strong, var(--muted, #777)); }
+.ui-select-trigger:focus-visible, .ui-select-trigger[aria-expanded="true"] { outline: 2px solid var(--ui-accent, var(--accent, #2563eb)); outline-offset: 2px; }
+.ui-select-trigger:disabled { opacity: .5; cursor: default; }
+.ui-select-menu { position: fixed; z-index: 10000; box-sizing: border-box; overflow-y: auto; overscroll-behavior: contain; padding: 4px; border: 1px solid var(--ui-border, var(--line, #d4d4d4)); border-radius: 12px; background: var(--ui-content, var(--surface, Canvas)); color: var(--ui-text-primary, var(--text, CanvasText)); font: inherit; box-shadow: 0 10px 32px rgb(0 0 0 / 18%); }
+.ui-select-menu[hidden], .ui-select[hidden] { display: none !important; }
+.ui-select-option { padding: 8px 10px; border-radius: 8px; cursor: pointer; overflow-wrap: anywhere; }
+.ui-select-option[data-highlighted] { background: var(--ui-surface-secondary, var(--surface-muted, #eee)); }
+.ui-select-option[aria-selected="true"] { background: var(--ui-selection-fill, #e5ecff); color: var(--ui-selection-ink, #1d4ed8); }
+.ui-select-option[aria-disabled="true"] { opacity: .45; cursor: default; }
+.ui-select-group { padding: 8px 10px 4px; font-size: .85em; opacity: .65; }
+@media (forced-colors: active) { .ui-select-trigger, .ui-select-menu { background: Canvas; color: CanvasText; border-color: ButtonText; } .ui-select-option[aria-selected="true"], .ui-select-option[data-highlighted] { background: Highlight; color: HighlightText; forced-color-adjust: none; } }

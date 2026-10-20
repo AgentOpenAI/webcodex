@@ -2,7 +2,7 @@
 .work-list-filters { min-width: 0; display: grid; gap: 8px; padding: 0 var(--web-panel-inset) 16px; }
 .work-list-filters .work-search-field { margin: 0; }
 .activity-project-filter { display: grid; gap: 5px; min-width: 0; color: var(--muted); font-size: 12px; }
-.activity-project-filter select { width: 100%; min-width: 0; max-width: 340px; min-height: 36px; border: 1px solid var(--line); border-radius: var(--ui-radius-sm); padding: 6px 10px; color: var(--text); background: var(--surface); font: inherit; }
+.activity-project-filter .mantine-Select-input { width: 100%; min-width: 0; max-width: 340px; min-height: 36px; border: 1px solid var(--line); border-radius: var(--ui-radius-sm); padding: 6px 36px 6px 10px; color: var(--text); background: var(--surface); font: inherit; }
 .activity-feed-heading { align-items: end; flex-wrap: wrap; gap: 12px; }
 .window-call-card { padding: 16px 0; display: grid; gap: 10px; border-bottom: 1px solid var(--line); min-width: 0; }
 .window-call-card.running { padding: 16px; margin-top: 10px; border: 1px solid var(--accent); border-radius: var(--ui-radius-sm); background: var(--surface-soft); }
@@ -36,7 +36,7 @@
 @media (max-width: 700px) {
   .runtime-page .windows-workbench { display: block; }
   .activity-feed-heading .activity-project-filter { width: 100%; }
-  .activity-project-filter select { max-width: 100%; }
+  .activity-project-filter .mantine-Select-input { max-width: 100%; }
   .window-call-card header { flex-wrap: wrap; }
   .window-call-timing { gap: 6px 12px; }
 }
@@ -135,28 +135,24 @@
 .window-session-focus-select:not([data-active="true"]) .window-session-color-dot {
   background: var(--quiet);
 }
-.window-session-focus-select select {
+.window-session-focus-select .mantine-Select-input {
   width: 100%;
   min-width: 0;
   height: 36px;
-  appearance: none;
   border: 1px solid color-mix(in srgb, var(--text) 22%, var(--line));
   border-radius: 9px;
   padding: 0 32px 0 29px;
-  background:
-    linear-gradient(45deg, transparent 50%, var(--muted) 50%) calc(100% - 15px) 15px / 5px 5px no-repeat,
-    linear-gradient(135deg, var(--muted) 50%, transparent 50%) calc(100% - 10px) 15px / 5px 5px no-repeat,
-    var(--surface);
+  background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: 12.5px;
   font-weight: 650;
 }
-.window-session-focus-select[data-active="true"] select {
+.window-session-focus-select[data-active="true"] .mantine-Select-input {
   border-color: var(--web-row-border);
   background-color: var(--web-row-selected);
 }
-.window-session-focus-select select:focus-visible {
+.window-session-focus-select .mantine-Select-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -313,7 +309,7 @@
 .window-collaboration-composer { max-height: 45dvh; overflow: auto; padding-block: 8px; }
 .window-collaboration-compose-box textarea { min-height: 60px; max-height: 20dvh; }
 .window-collaboration-compose-options > label { min-width: 0; max-width: 100%; flex-wrap: wrap; }
-.window-collaboration-compose-options select { max-width: 100%; }
+.window-collaboration-compose-options .mantine-Select-root { width: 116px; max-width: 100%; }
 .window-collaboration-compose-options .window-collaboration-ack-toggle { flex-wrap: nowrap; }
 .window-collaboration-toolbar { grid-template-columns: 32px minmax(0, 1fr); padding-block: 7px; min-height: 48px; }
 .window-collaboration-context { grid-column: 2; justify-self: start; }

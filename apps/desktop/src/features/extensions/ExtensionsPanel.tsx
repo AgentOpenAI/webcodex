@@ -22,7 +22,7 @@ export function ExtensionsPanel({ state, onState, initialTab }: { state: Desktop
   const instructionsText = useInstructionsText();
   const [tab, setTab] = useState<ExtensionTab>(() => extensionPanel(initialTab).id);
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, tab);
+  useFlowingSelection(selectionRef, tab, { variant: "filled" });
   const view = useExtensionsState(state, onState);
   const panel = extensionPanel(tab);
   const { Content, Configuration } = panel;

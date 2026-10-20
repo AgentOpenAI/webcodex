@@ -1,4 +1,6 @@
-import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { UiProvider } from "../src/ui/UiProvider.js";
+import { act, fireEvent, render as testingRender, renderHook, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CopyIdentity } from "../src/runtime-v2/components/ui/CopyIdentity.js";
 import { WindowActivityFeed } from "../src/runtime-v2/components/WindowActivityFeed.js";
@@ -6,6 +8,8 @@ import { RuntimeView } from "../src/runtime-v2/views/RuntimeView.js";
 import { useRuntimeOverview } from "../src/runtime-v2/state/useRuntimeOverview.js";
 import type { RuntimeV2Client } from "../src/runtime-v2/api/client.js";
 import { runtimeOverview, windowDetail } from "./fixtures.js";
+
+const render = (ui: ReactElement) => testingRender(ui, { wrapper: UiProvider });
 
 describe("Runtime usability", () => {
   it("defaults to newest first without reversing Session continuation membership", () => {
@@ -49,6 +53,7 @@ describe("Runtime usability", () => {
     render(<WindowActivityFeed detail={detail} projects={[]} language="en" selectedSessionId="session-without-calls" onOpenSessionRecord={openRecord} />);
     fireEvent.click(screen.getByRole("button", { name: "View Session record" }));
     expect(openRecord).toHaveBeenCalledWith("agent:runner:project", "session-without-calls");
+    fireEvent.click(screen.getByRole("combobox", { name: "Session filter" }));
     expect(screen.getByRole("option", { name: /Retained work/ })).toBeTruthy();
     expect(screen.getByText("This Session is linked to the Window but has no retained calls.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Copy Session" })).toBeTruthy();

@@ -40,7 +40,7 @@ fn work_result_pdf_bytes_are_private_and_do_not_enter_structured_or_text_content
 async fn work_result_descriptor_keeps_renderers_public_and_bridge_tools_app_only() {
     assert_eq!(
         MCP_WORK_RESULT_UI_RESOURCE_URI,
-        "ui://webcodex/work-result/v32"
+        "ui://webcodex/work-result/v33"
     );
     let runtime = test_runtime();
 
@@ -750,6 +750,17 @@ fn work_result_html_is_bounded_live_progress_ui() {
         .split_once("/* END GENERATED WORK RESULT PDF */")
         .expect("generated PDF bundle end");
     let authored_html = format!("{before_pdf}{after_pdf}");
+    // Only the generated shared appearance module may persist local UI
+    // preferences. Authored result/authority/data code remains storage-free.
+    let (before_selection, selection_tail) = MCP_WORK_RESULT_APP_HTML
+        .split_once("/* BEGIN GENERATED SELECTION MOTION */")
+        .expect("generated selection bundle start");
+    let (selection_bundle, after_selection) = selection_tail
+        .split_once("/* END GENERATED SELECTION MOTION */")
+        .expect("generated selection bundle end");
+    assert!(selection_bundle.contains("webcodex.ui.selection.v1"));
+    assert!(selection_bundle.contains("webcodex.ui.accent.v1"));
+    let storage_free_html = format!("{before_selection}{after_selection}");
     for forbidden in [
         "Linked work conversation",
         "No linked work conversation",
@@ -769,7 +780,9 @@ fn work_result_html_is_bounded_live_progress_ui() {
         "baseline_tree",
         "final_tree",
     ] {
-        let checked_html = if forbidden == "fetch(" {
+        let checked_html = if forbidden == "localStorage" {
+            storage_free_html.as_str()
+        } else if forbidden == "fetch(" {
             authored_html.as_str()
         } else {
             MCP_WORK_RESULT_APP_HTML

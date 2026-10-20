@@ -33,7 +33,7 @@ export function SessionInspector({
 }: Props) {
   const [tab, setTab] = useState<"context" | "evidence">("context");
   const selectionRef = useRef<HTMLDivElement | null>(null);
-  useFlowingSelection(selectionRef, tab);
+  useFlowingSelection(selectionRef, tab, { variant: "underline" });
   const tabGroupId = useId();
   const tabButtons = useRef<Array<HTMLButtonElement | null>>([]);
   const tabs = ["context", "evidence"] as const;

@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { useFlowingSelection } from "../../../../frontend/src/ui/useFlowingSelection";
 import { NavigationIcon } from "./NavigationIcon";
 import type { DesktopState } from "../models/topology";
 import { LANGUAGES, useLocale, type MessageKey } from "../i18n/locale";
@@ -17,6 +19,8 @@ const NAVIGATION_GROUPS: Array<{ label: "nav.work" | "nav.configure"; items: Nav
   { label: "nav.configure", items: ["connection", "extensions", "settings"] },
 ];
 export function Sidebar({ state, navigation, setNavigation }: { state: DesktopState; navigation: Navigation; setNavigation: (page: Navigation) => void }) {
+  const selectionRef = useRef<HTMLElement | null>(null);
+  useFlowingSelection(selectionRef, navigation, { variant: "filled", itemSelector: "button[data-webcodex-action]", selectedSelector: "[aria-current=page]" });
   const { locale, setLocale, t } = useLocale();
   const { appearance, setAppearance, accent, setAccent } = useAppearance();
   const p = useProduct(); const c = useConnectionsTools();
@@ -30,7 +34,7 @@ export function Sidebar({ state, navigation, setNavigation }: { state: DesktopSt
   return (
       <aside className="sidebar">
         <div className="brand"><BrandMark /><div><strong>WebCodex</strong><span>Desktop</span></div></div>
-        <nav aria-label={t("nav.main")}>
+        <nav ref={selectionRef} aria-label={t("nav.main")}>
           {NAVIGATION_GROUPS.map((group) => (
             <section className="nav-group" key={group.label} aria-label={t(group.label)}>
               <span className="nav-group-label">{t(group.label)}</span>
@@ -48,7 +52,7 @@ export function Sidebar({ state, navigation, setNavigation }: { state: DesktopSt
                 >
                   <NavigationIcon name={item} />
                   <span className="nav-label">{label}</span>
-                  <kbd aria-hidden="true">{index + 1}</kbd>
+                  <kbd aria-hidden="true" data-selection-motion-skip>{index + 1}</kbd>
                 </button>;
               })}
             </section>

@@ -1,4 +1,6 @@
-import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import type { ReactElement } from "react";
+import { UiProvider } from "../src/ui/UiProvider.js";
+import { act, fireEvent, render as testingRender, renderHook, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { SessionCollaboration } from "../src/runtime-v2/components/SessionCollaboration.js";
 import { SessionComposer } from "../src/runtime-v2/components/SessionComposer.js";
@@ -8,6 +10,8 @@ import type { RuntimeV2Client } from "../src/runtime-v2/api/client.js";
 import { useSessionWorkspace, type SessionLocation, type SessionWorkspaceState } from "../src/runtime-v2/state/useSessionWorkspace.js";
 import { loadDraft, saveDraft } from "../src/runtime_storage.js";
 import { recentSession, sessionDetail } from "./fixtures.js";
+
+const render = (ui: ReactElement) => testingRender(ui, { wrapper: UiProvider });
 
 const location: SessionLocation = { projectId: "project", sessionId: "session-a", runner: "runner", projectName: "Project" };
 const secondLocation = { ...location, sessionId: "session-b" };

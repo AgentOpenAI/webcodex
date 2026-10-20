@@ -1,4 +1,7 @@
 {
+  "selection.label": "선택 색상",
+  "selection.accent": "테마 강조색",
+  "selection.monochrome": "단색",
   "plugins.add": "네이티브 Tool Plugin 추가",
   "plugins.help": "신뢰할 수 있는 네이티브 Tool Plugin을 이 Runner에 등록합니다. 저장만으로 실행되지 않으며 Runner를 다시 시작하면 적용됩니다. 기존 등록을 덮어쓰지 않습니다.",
   "plugins.id": "Plugin ID",

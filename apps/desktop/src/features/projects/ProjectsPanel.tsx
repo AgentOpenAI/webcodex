@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, NativeSelect, TextInput } from "@mantine/core";
+import { Button, Select, TextInput } from "@mantine/core";
 import { Search } from "lucide-react";
 import { desktopApi } from "../../lib/desktop-api";
 import type { DesktopState } from "../../models/topology";
@@ -226,7 +226,7 @@ export function ProjectsPanel({ onComputerSettings, onState }: { onComputerSetti
     </header>
     <div className="workspace-project-filters">
       <div className="workspace-search"><TextInput id="projects-search" label={p("search")} type="search" leftSection={<Search size={16} aria-hidden="true" />} value={query} onChange={event => setQuery(event.currentTarget.value)} /></div>
-      <div className="workspace-search"><NativeSelect size="md" classNames={{ input: "ui-mantine-input", label: "ui-mantine-label" }} id="projects-device-filter" label={p("executionDevice")} value={device} onChange={event => selectDevice(event.currentTarget.value)} data={[
+      <div className="workspace-search"><Select size="md" classNames={{ input: "ui-mantine-input", label: "ui-mantine-label" }} id="projects-device-filter" label={p("executionDevice")} value={device} searchValue={!device ? p("allDevices") : device === workspace.state.workspace_runner?.client_id ? `${p("thisComputer")} · ${device}` : device} allowDeselect={false} onChange={value => { if (value !== null) selectDevice(value); }} data={[
         { value: "", label: p("allDevices") },
         ...deviceIds.map(id => ({ value: id, label: id === workspace.state.workspace_runner?.client_id ? `${p("thisComputer")} · ${id}` : id })),
       ]} /></div>

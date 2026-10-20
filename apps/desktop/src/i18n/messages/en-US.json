@@ -1,4 +1,7 @@
 {
+  "selection.label": "Selection color",
+  "selection.accent": "Theme accent",
+  "selection.monochrome": "Monochrome",
   "operation.tunnelConfigUpdate": "Saving Tunnel configuration",
   "tunnelConfig.useEnvironment": "Clear saved configuration and use environment",
   "tunnelConfig.sourceFile": "Current source: local configuration file (preferred)",

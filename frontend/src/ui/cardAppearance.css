@@ -1,0 +1,9 @@
+@import "./selectionPreference.css";
+:root {
+  --ui-content: light-dark(#ffffff, #202020);
+  --ui-text-primary: light-dark(#191919, #f5f5f5);
+  --ui-text-secondary: light-dark(#595959, #c2c2c2);
+  --ui-border: light-dark(#e5e5e5, #383838);
+  --ui-border-strong: light-dark(#a3a3a3, #737373);
+  --ui-surface-secondary: light-dark(#f7f7f7, #292929);
+}

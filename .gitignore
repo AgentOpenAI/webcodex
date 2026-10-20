@@ -75,3 +75,5 @@ __pycache__/
 
 # Generated motion acceptance reports, screenshots and videos
 /artifacts/flowing-selection/
+/artifacts/selection-consistency/
+/artifacts/mobile-runtime-layout/

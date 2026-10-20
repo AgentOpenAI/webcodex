@@ -1,4 +1,7 @@
 {
+  "selection.label": "Auswahlfarbe",
+  "selection.accent": "Themenakzent",
+  "selection.monochrome": "Monochrom",
   "plugins.add": "Natives Tool Plugin hinzufügen",
   "plugins.help": "Registrieren Sie ein vertrauenswürdiges Plugin. Speichern startet es nicht. Starten Sie den verwalteten Runner neu, um die Änderung zu übernehmen. Bestehende Einträge werden nicht überschrieben.",
   "plugins.id": "Plugin-ID",

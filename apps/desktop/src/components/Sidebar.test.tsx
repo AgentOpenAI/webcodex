@@ -70,6 +70,11 @@ it("preserves navigation callbacks, active state and shortcut numbering", () => 
   const home = screen.getByRole("button", { name: /^Home/ });
   expect(home).toHaveAttribute("aria-current", "page");
   expect(home).toHaveAttribute("aria-keyshortcuts", "Control+1 Meta+1");
+  const shortcut = home.querySelector("kbd")!;
+  expect(shortcut).toHaveAttribute("data-selection-motion-skip");
+  expect(shortcut).toHaveTextContent("1");
+  const foreground = home.closest("nav")!.querySelector("[data-selection-motion-foreground]")!;
+  expect(foreground).not.toHaveTextContent("1");
   const projects = screen.getByRole("button", { name: /^Projects/ });
   fireEvent.click(projects);
   expect(setNavigation).toHaveBeenCalledWith("projects");
@@ -80,10 +85,14 @@ it("reveals shortcut keys only while Ctrl or Command is held on its own", () => 
   try {
     const view = show();
     const root = document.documentElement;
+    const home = screen.getByRole("button", { name: /^Home/ });
+    const shortcut = home.querySelector("kbd")!;
     fireEvent.keyDown(window, { key: "Control", ctrlKey: true });
     expect(root).not.toHaveAttribute("data-shortcut-hints");
     act(() => { vi.advanceTimersByTime(400); });
     expect(root).toHaveAttribute("data-shortcut-hints");
+    expect(home.querySelector("kbd")).toBe(shortcut);
+    expect(shortcut).toHaveAttribute("data-selection-motion-skip");
     fireEvent.keyUp(window, { key: "Control" });
     expect(root).not.toHaveAttribute("data-shortcut-hints");
 

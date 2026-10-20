@@ -1,3 +1,4 @@
+import { selectOption } from "../test/select-option";
 import { StrictMode, useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -432,7 +433,7 @@ describe("Diagnostics are explicit and secret-free", () => {
     expect(onUpdates).toHaveBeenCalledOnce();
     const selector = await screen.findByRole("combobox", { name: "Tool request tracing" });
     expect(selector).toBeEnabled();
-    fireEvent.change(selector, { target: { value: "metadata" } });
+    selectOption(selector, "metadata");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.setToolRequestTracing).toHaveBeenCalledExactlyOnceWith({ mode: "metadata", expected_revision: "env-fence", confirm_full: false, restart: false, confirm_interrupt: false }));
   });
@@ -441,7 +442,7 @@ describe("Diagnostics are explicit and secret-free", () => {
     render(wrap(<DiagnosticsPanel state={state} onState={vi.fn()} />));
     const selector = await screen.findByRole("combobox", { name: "Tool request tracing" });
     expect(selector).toBeDisabled();
-    expect(selector).toHaveValue("full");
+    expect(selector).toHaveValue("Full inputs & results");
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save and restart Server" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open Server configuration location" }));
@@ -456,7 +457,7 @@ describe("Diagnostics are explicit and secret-free", () => {
     render(wrap(<DiagnosticsPanel state={state} onState={vi.fn()} />));
     const selector = await screen.findByRole("combobox", { name: "Tool request tracing" });
     expect(selector).toBeDisabled();
-    expect(selector).toHaveValue("unknown");
+    expect(selector).toHaveValue("Not yet confirmed");
   });
   it("keeps the remote tracing selector disabled at the effective mode", async () => {
     api.diagnostics.mockResolvedValue({ ...diagnostic, trace: { ...diagnostic.trace, configured_mode: null, effective_mode: "metadata", can_edit: false, can_restart: false, error_code: "server_not_owned" } });
@@ -464,7 +465,7 @@ describe("Diagnostics are explicit and secret-free", () => {
     render(wrap(<DiagnosticsPanel state={remote} onState={vi.fn()} />));
     await screen.findByText(/Change its recording setting on the Server's machine/);
     expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toBeDisabled();
-    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("metadata");
+    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Timing & status only");
     expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(within(screen.getByText("Current Server setting").parentElement!).getByText("Timing & status only")).toBeVisible();
     expect(within(screen.getByText("Saved recording setting").parentElement!).getByText("Not yet confirmed")).toBeInTheDocument();
@@ -482,7 +483,7 @@ describe("Diagnostics are explicit and secret-free", () => {
   it("keeps the running mode separate from the draft and a saved pending setting", async () => {
     api.setToolRequestTracing.mockResolvedValue({ ...diagnostic.trace, configured_mode: "metadata", effective_mode: "off", restart_required: true });
     render(wrap(<DiagnosticsPanel state={state} onState={vi.fn()} />));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Tool request tracing" }), { target: { value: "metadata" } });
+    selectOption(await screen.findByRole("combobox", { name: "Tool request tracing" }), "metadata");
     expect(within(screen.getByText("Current Server setting").parentElement!).getByText("Off")).toBeVisible();
     expect(within(screen.getByText("Saved recording setting").parentElement!).getByText("Off")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -494,7 +495,7 @@ describe("Diagnostics are explicit and secret-free", () => {
     const persistent = { ...state, persistent_environment: "env-fixture" };
     api.setToolRequestTracing.mockResolvedValue({ ...diagnostic.trace, configured_mode: "metadata", effective_mode: "metadata" });
     render(wrap(<DiagnosticsPanel state={persistent} onState={vi.fn()} />));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Tool request tracing" }), { target: { value: "metadata" } });
+    selectOption(await screen.findByRole("combobox", { name: "Tool request tracing" }), "metadata");
     fireEvent.click(screen.getByRole("button", { name: "Save and restart Server" }));
     const confirmation = await screen.findByRole("dialog", { name: "Runtime restart warning" });
     expect(api.setToolRequestTracing).not.toHaveBeenCalled();
@@ -513,7 +514,7 @@ describe("Diagnostics are explicit and secret-free", () => {
   });
   it("requires explicit Full trace confirmation, preserving the expected env revision", async () => {
     render(wrap(<DiagnosticsPanel state={state} onState={vi.fn()} />));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Tool request tracing" }), { target: { value: "full" } });
+    selectOption(await screen.findByRole("combobox", { name: "Tool request tracing" }), "full");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const modal = await screen.findByRole("dialog", { name: "Confirm full tracing" });
     expect(api.setToolRequestTracing).not.toHaveBeenCalled();
@@ -572,16 +573,16 @@ it("preserves network and tracing drafts while categories change without applyin
   expect(api.runtimeSettings).not.toHaveBeenCalled();
   expect(api.diagnostics).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("tab", { name: "Network" }));
-  fireEvent.change(screen.getByLabelText("Proxy mode"), { target: { value: "custom" } });
+  selectOption(screen.getByLabelText("Proxy mode"), "custom");
   const proxy = screen.getByLabelText("Proxy URL");
   fireEvent.change(proxy, { target: { value: "http://127.0.0.1:7890" } });
   fireEvent.click(screen.getByRole("tab", { name: "Troubleshooting" }));
   const trace = await screen.findByRole("combobox", { name: "Tool request tracing" });
-  fireEvent.change(trace, { target: { value: "metadata" } });
+  selectOption(trace, "metadata");
   fireEvent.click(screen.getByRole("tab", { name: "Network" }));
   expect(screen.getByLabelText("Proxy URL")).toHaveValue("http://127.0.0.1:7890");
   fireEvent.click(screen.getByRole("tab", { name: "Troubleshooting" }));
-  expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("metadata");
+  expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Timing & status only");
   expect(api.diagnostics).toHaveBeenCalledTimes(1);
   expect(api.setToolRequestTracing).not.toHaveBeenCalled();
   expect(api.updateTunnelProxy).not.toHaveBeenCalled();
@@ -730,10 +731,10 @@ describe("Diagnostics observation and action races", () => {
     render(wrap(<DiagnosticsPanel state={first} onState={vi.fn()} />));
     api.diagnostics.mockResolvedValue({ ...diagnostic, trace: { ...diagnostic.trace, configured_mode: "full", revision: "new-revision" } });
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("full"));
-    fireEvent.change(screen.getByRole("combobox", { name: "Tool request tracing" }), { target: { value: "metadata" } });
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Full inputs & results"));
+    selectOption(screen.getByRole("combobox", { name: "Tool request tracing" }), "metadata");
     await act(async () => { if (result === "success") initial.resolve(diagnostic); else initial.reject(busy); });
-    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("metadata");
+    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Timing & status only");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.setToolRequestTracing).toHaveBeenCalledWith(expect.objectContaining({ mode: "metadata", expected_revision: "new-revision" })));
@@ -741,11 +742,11 @@ describe("Diagnostics observation and action races", () => {
 
   it("preserves an edited mode when a current manual observation completes", async () => {
     render(wrap(<DiagnosticsPanel state={first} onState={vi.fn()} />));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Tool request tracing" }), { target: { value: "metadata" } });
+    selectOption(await screen.findByRole("combobox", { name: "Tool request tracing" }), "metadata");
     api.diagnostics.mockResolvedValue({ ...diagnostic, trace: { ...diagnostic.trace, configured_mode: "full", revision: "updated" } });
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Refresh" })).toBeEnabled());
-    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("metadata");
+    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Timing & status only");
     expect(within(screen.getByText("Saved recording setting").parentElement!).getByText("Full inputs & results")).toBeVisible();
   });
 
@@ -767,7 +768,7 @@ describe("Diagnostics observation and action races", () => {
 
   it("discards a trace confirmation and old edit authority when the environment changes", async () => {
     const view = render(wrap(<DiagnosticsPanel state={first} onState={vi.fn()} />));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Tool request tracing" }), { target: { value: "full" } });
+    selectOption(await screen.findByRole("combobox", { name: "Tool request tracing" }), "full");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByRole("dialog");
     const pending = settingsDeferred<DiagnosticSnapshot>();
@@ -801,7 +802,7 @@ describe("Diagnostics observation and action races", () => {
     const pending = settingsDeferred<RuntimeSettings>();
     api.runtimeSettings.mockReturnValueOnce(pending.promise);
     const view = render(wrap(<DiagnosticsPanel state={first} onState={vi.fn()} />));
-    fireEvent.change(await screen.findByRole("combobox", { name: "Tool request tracing" }), { target: { value: "metadata" } });
+    selectOption(await screen.findByRole("combobox", { name: "Tool request tracing" }), "metadata");
     fireEvent.click(screen.getByRole("button", { name: "Save and restart Server" }));
     expect(api.runtimeSettings).toHaveBeenCalledTimes(1);
     view.rerender(wrap(<DiagnosticsPanel state={second} onState={vi.fn()} />));
@@ -839,8 +840,8 @@ describe("Diagnostics observation and action races", () => {
     api.diagnostics.mockReturnValueOnce(initial.promise);
     api.diagnostics.mockResolvedValue({ ...diagnostic, trace: { ...diagnostic.trace, configured_mode: "full" } });
     render(<StrictMode>{wrap(<DiagnosticsPanel state={first} onState={vi.fn()} />)}</StrictMode>);
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("full"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Full inputs & results"));
     await act(async () => initial.resolve(diagnostic));
-    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("full");
+    expect(screen.getByRole("combobox", { name: "Tool request tracing" })).toHaveValue("Full inputs & results");
   });
 });

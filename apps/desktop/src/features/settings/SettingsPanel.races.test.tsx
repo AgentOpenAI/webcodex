@@ -1,3 +1,4 @@
+import { selectOption } from "../../test/select-option";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider } from "../../i18n/locale";
@@ -144,7 +145,7 @@ describe("Settings observation and action ownership", () => {
 
   it("preserves same-target proxy drafts but discards them when the Runner changes", async () => {
     const view = render(wrap(<SettingsPanel state={state} onState={vi.fn()} initialSection="network" />));
-    fireEvent.change(screen.getByLabelText("Proxy mode"), { target: { value: "custom" } });
+    selectOption(screen.getByLabelText("Proxy mode"), "custom");
     fireEvent.change(screen.getByLabelText("Proxy URL"), { target: { value: "http://proxy-a.invalid:8080" } });
     state = { ...state, activity_sequence: 2 };
     view.rerender(wrap(<SettingsPanel state={state} onState={vi.fn()} initialSection="network" />));
@@ -154,8 +155,8 @@ describe("Settings observation and action ownership", () => {
     retarget();
     view.rerender(wrap(<SettingsPanel state={state} onState={vi.fn()} initialSection="network" />));
     expect(screen.getByRole("tab", { name: "Network" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByLabelText("Proxy mode")).toHaveValue("direct");
-    fireEvent.change(screen.getByLabelText("Proxy mode"), { target: { value: "custom" } });
+    expect(screen.getByLabelText("Proxy mode")).toHaveValue("Direct connection");
+    selectOption(screen.getByLabelText("Proxy mode"), "custom");
     expect(screen.getByLabelText("Proxy URL")).toHaveValue("");
     expect(api.updateTunnelProxy).not.toHaveBeenCalled();
   });

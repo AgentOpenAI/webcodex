@@ -1,3 +1,4 @@
+import { Select } from "@mantine/core";
 import { useEffect, useRef, useState } from "react";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -162,10 +163,10 @@ function DiagnosticsContents({ state, onState, onActivity, onRuntime, onConnecti
         </dl>
         <p className="field-help">{data.trace.effective_mode ? p("traceCurrentHelp") : p("traceUnconfirmedHelp")}</p>
         <label htmlFor="desktop-trace-mode">{s("Tool request tracing")}</label>
-        <select id="desktop-trace-mode" value={displayedMode ?? "unknown"} onChange={event => { dirtyMode.current = true; setMode(event.target.value as TraceMode); setConfirmation(null); }} disabled={disabled || !canTrace} aria-describedby={canTrace ? "desktop-trace-mode-help" : "desktop-trace-mode-help desktop-trace-authority-help"}>
-          {!canTrace && !data.trace.effective_mode && <option value="unknown">{p("traceUnconfirmed")}</option>}
-          <option value="off">{s("Off")}</option><option value="metadata">{p("traceMetadata")}</option><option value="full">{p("traceFull")}</option>
-        </select>
+        <Select id="desktop-trace-mode" value={displayedMode ?? "unknown"} allowDeselect={false} onChange={value => { if (value === "off" || value === "metadata" || value === "full") { dirtyMode.current = true; setMode(value); setConfirmation(null); } }} disabled={disabled || !canTrace} aria-describedby={canTrace ? "desktop-trace-mode-help" : "desktop-trace-mode-help desktop-trace-authority-help"} data={[
+          ...(!canTrace && !data.trace.effective_mode ? [{ value: "unknown", label: p("traceUnconfirmed") }] : []),
+          { value: "off", label: s("Off") }, { value: "metadata", label: p("traceMetadata") }, { value: "full", label: p("traceFull") },
+        ]} />
         <p id="desktop-trace-mode-help" className="field-help">{!displayedMode ? p("traceUnconfirmedHelp") : displayedMode === "off" ? p("traceOffHelp") : s(displayedMode === "full" ? "Full tracing may contain sensitive tool inputs and results. Enable it only temporarily." : "Metadata records lifecycle and correlation, not full tool arguments or results.")}</p>
         {data.trace.restart_required && data.trace.effective_mode && <p role="status">{p("tracePendingHelp")}</p>}
         {canTrace ? <>

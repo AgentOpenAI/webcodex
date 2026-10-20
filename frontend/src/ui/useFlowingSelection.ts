@@ -8,7 +8,7 @@ export function useFlowingSelection<T extends HTMLElement>(ref: RefObject<T | nu
   const selectors = useRef<SelectionMotionOptions>({});
   useLayoutEffect(() => {
     if (attached.current === ref.current && selectors.current.itemSelector === options.itemSelector
-      && selectors.current.selectedSelector === options.selectedSelector) return;
+      && selectors.current.selectedSelector === options.selectedSelector && selectors.current.variant === options.variant) return;
     controller.current?.destroy();
     attached.current = ref.current;
     selectors.current = { ...options };
