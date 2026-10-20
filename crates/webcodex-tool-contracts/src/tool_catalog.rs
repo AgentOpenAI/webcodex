@@ -228,9 +228,9 @@ pub const TOOL_RECOMMENDED_FLOWS: &[ToolRecommendedFlow] = &[
     },
     ToolRecommendedFlow {
         name: "observe_computer",
-        summary: "Computer observe: one guaranteed read-only gateway for Runner/desktop discovery, accessibility inspection, clipboard read, and window/display snapshots. Choose a closed action; no control effects are admitted.",
+        summary: "Computer observe: discover targets and current elements; when action support is unclear, inspect element_state can_press/can_focus/can_input_text. Tree/search replaces element IDs; state preserves their generation. Observation grants no control authority.",
         manifest_purpose:
-            "Use observe_computer with the smallest read-only action needed: targets/windows/displays/applications, accessibility_status/accessibility_tree/find_elements/element_state, snapshot_window/snapshot_display, or read_clipboard. Exact action scopes and Runner capabilities remain fenced.",
+            "Use observe_computer with the smallest read-only action needed: targets/windows/displays/applications, accessibility_status/accessibility_tree/find_elements/element_state, snapshot_window/snapshot_display, or read_clipboard. When an element's semantic action support is unclear, call element_state with its exact client_id/surface_id/element_id and inspect can_press/can_focus/can_input_text. Recheck only when changed state matters to the next decision. Successful tree/search observations replace all element IDs on that surface; element_state preserves observation_generation and cannot refresh stale IDs. A readable value does not imply action support. Exact action scopes and Runner capabilities remain fenced; native state grants no execution authority.",
         tools: &["observe_computer"],
     },
     ToolRecommendedFlow {

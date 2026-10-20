@@ -138,6 +138,18 @@ Record an observation generation (and observation time where useful) with elemen
 
 The first implementation uses a positive process-local generation per observed surface and does not add a wall-clock TTL or observation timestamp. `observe_computer(action=accessibility_tree)` and the Control-side finder expose the generation attached to their fresh element handles. `observe_computer(action=element_state, surface_id, element_id)` re-resolves an existing handle and reports that same generation; it neither creates a new handle nor advances generation. `value_empty` is actionable only for supported unprotected text input and is `null` for protected/secure content or when unavailable.
 
+When an element's semantic action support is unclear, query its current state before choosing an effect:
+
+```json
+{"action":"element_state","client_id":"observed-client","surface_id":"observed-surface","element_id":"observed-element"}
+```
+
+Pass this to `observe_computer`, substituting the exact identities from the latest tree/search on that surface. Use `can_press` to choose `control_computer(action=press)`, `can_focus` for `focus`, and `can_input_text` for `input_text`. These fields describe current native eligibility, not permission or Runner capability admission. Every effect still re-resolves its target and checks live conditions. A role, readable value, or provider keyboard-focusability alone does not establish support for an action.
+
+On Windows, an enabled, unprotected InvokePattern button may support `press` while `can_focus=false`: bounded semantic focus is limited to an exact foreground `AXTextField`. An empty writable text field may support focus before it supports input; after focusing, query state again if input eligibility is uncertain. Non-empty/read-only fields remain ineligible for this text-input slice. A readable ComboBox value does not admit focus, input or selection. A false affordance calls for a different admitted route or changed preconditions rather than repeated guesses of the same action on unchanged state. Missing or failed state observation is unknown, not a false affordance.
+
+Choose the smallest observation that resolves the next decision. State queries are not mandatory before every action and do not authorize retries after uncertain effects. A successful tree/search, including a scoped subtree read, replaces all prior element IDs on that surface; use its newly returned IDs for subsequent state/control calls. `element_state` preserves the existing generation and cannot make a stale ID current.
+
 Stale recovery should remain re-observation, normally:
 
 ```text

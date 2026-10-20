@@ -1296,6 +1296,7 @@ pub enum ComputerObserveToolCall {
         #[serde(default)]
         limit: Option<usize>,
     },
+    /// Re-resolve a current element without replacing its observation_generation. When action support is unclear, inspect can_press/can_focus/can_input_text before choosing press/focus/input_text. Advisory native state grants no permission or capability and cannot refresh a stale element_id.
     ElementState {
         #[schemars(length(min = 1, max = 128))]
         client_id: String,
