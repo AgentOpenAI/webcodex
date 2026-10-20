@@ -1425,6 +1425,7 @@ fn computer_find_elements_audit_omits_label_and_semantic_result_content() {
     let parsed_summary = ToolCall::ComputerObserve(ComputerObserveToolCall::FindElements {
         client_id: "mini".to_string(),
         surface_id: "surface_safe".to_string(),
+        root_element_id: None,
         role: Some(private_role.to_string()),
         subrole: Some(private_subrole.to_string()),
         label: Some(secret.to_string()),

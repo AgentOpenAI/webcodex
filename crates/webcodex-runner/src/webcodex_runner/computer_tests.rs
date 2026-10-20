@@ -89,6 +89,26 @@ fn computer_request_kinds_remain_closed() {
 }
 
 #[test]
+fn computer_subtree_request_rejects_non_string_scope_before_native_work() {
+    for root in [
+        serde_json::json!(null),
+        serde_json::json!(42),
+        serde_json::json!({}),
+    ] {
+        let payload = serde_json::json!({"surface_id":"surface_test", "root_element_id":root, "max_depth":8, "max_nodes":256});
+        let result = handle_computer_request(&request(
+            "computer_accessibility_tree",
+            &payload.to_string(),
+        ));
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap()
+            .contains("root_element_id must be a string"));
+    }
+}
+
+#[test]
 fn computer_snapshot_region_payload_is_closed_and_typed() {
     let exact = serde_json::json!({
         "surface_id": "surface_test",

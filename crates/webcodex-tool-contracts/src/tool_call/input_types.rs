@@ -1261,6 +1261,9 @@ pub enum ComputerObserveToolCall {
         client_id: String,
         #[schemars(length(min = 1, max = 128))]
         surface_id: String,
+        #[schemars(length(min = 9, max = 128))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root_element_id: Option<String>,
         #[schemars(range(min = 0))]
         #[serde(default)]
         max_depth: Option<usize>,
@@ -1273,6 +1276,9 @@ pub enum ComputerObserveToolCall {
         client_id: String,
         #[schemars(length(min = 1, max = 128))]
         surface_id: String,
+        #[schemars(length(min = 9, max = 128))]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        root_element_id: Option<String>,
         #[schemars(length(min = 1, max = 256))]
         #[serde(default)]
         role: Option<String>,

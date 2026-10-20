@@ -10,6 +10,87 @@ use sha2::{Digest, Sha256};
 
 const DISPLAY_ID: &str = "display_iavN7wEjRWeJq83v";
 
+#[tokio::test]
+async fn computer_subtree_dispatch_rejects_old_runner_scope_and_filters_fresh_matches() {
+    for finder in [false, true] {
+        for receipt in [None, Some("element_other"), Some("element_root")] {
+            let client_id = "computer-subtree";
+            let runtime = runtime_with_agent_project(client_id);
+            let auth = open_auth_context();
+            register_agent_projects_for_auth(
+                &runtime,
+                client_id,
+                &auth,
+                RunnerCapabilities {
+                    computer_observe: true,
+                    computer_accessibility_observe: true,
+                    ..Default::default()
+                },
+                vec![registered_project("agent-proj", "/tmp/agent-proj")],
+            )
+            .await;
+            let args = if finder {
+                json!({"action":"find_elements", "client_id":client_id, "surface_id":"surface_test", "root_element_id":"element_root", "label":"Deep target"})
+            } else {
+                json!({"action":"accessibility_tree", "client_id":client_id, "surface_id":"surface_test", "root_element_id":"element_root", "max_depth":8, "max_nodes":256})
+            };
+            let call = serde_json::from_value::<ComputerObserveToolCall>(args).unwrap();
+            let task = tokio::spawn({
+                let runtime = runtime.clone();
+                let auth = auth.clone();
+                async move {
+                    runtime
+                        .dispatch_computer_tool(ToolCall::ComputerObserve(call), Some(&auth))
+                        .await
+                }
+            });
+            let request = wait_for_runner_request_for_client(&runtime, client_id).await;
+            assert_eq!(request.kind, "computer_accessibility_tree");
+            let payload: Value = serde_json::from_str(request.stdin.as_deref().unwrap()).unwrap();
+            assert_eq!(payload["root_element_id"], "element_root");
+            let mut output = json!({"platform":"windows", "surface_id":"surface_test", "observation_generation":2,
+                "max_depth":8, "max_nodes":256, "truncated":false, "node_count":1,
+                "nodes":[{"element_id":"element_new", "parent_element_id":null, "depth":0, "role":"AXButton", "subrole":null,
+                    "title":"Deep target", "description":null, "placeholder":null, "value":null, "enabled":true, "focused":false, "child_count":0}]});
+            if let Some(root) = receipt {
+                output["root_element_id"] = json!(root);
+            }
+            runtime
+                .runner_registry
+                .complete(RunnerResultRequest {
+                    client_id: client_id.into(),
+                    runner_instance_id: format!("inst-{client_id}"),
+                    request_id: request.request_id,
+                    exit_code: Some(0),
+                    stdout: Some(output.to_string()),
+                    stderr: None,
+                    stdout_truncated: false,
+                    stderr_truncated: false,
+                    duration_ms: Some(1),
+                    error: None,
+                })
+                .await
+                .unwrap();
+            let result = task.await.unwrap();
+            assert_eq!(
+                result.success,
+                receipt == Some("element_root"),
+                "{result:?}"
+            );
+            if result.success {
+                assert!(result.output.get("root_element_id").is_none());
+                assert_eq!(result.output["observation_generation"], 2);
+                if finder {
+                    assert_eq!(result.output["count"], 1);
+                    assert_eq!(result.output["truncated"], false);
+                }
+            } else {
+                assert_eq!(result.output["error_kind"], "invalid_runner_response");
+            }
+        }
+    }
+}
+
 fn sha256_hex(data: &[u8]) -> String {
     Sha256::digest(data)
         .iter()

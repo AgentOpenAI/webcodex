@@ -2,6 +2,43 @@
 
 use super::effects::computer_error;
 use super::*;
+
+pub(super) fn accessibility_tree_payload(
+    surface_id: &str,
+    root_element_id: Option<&str>,
+    max_depth: usize,
+    max_nodes: usize,
+) -> Result<Value, String> {
+    let mut payload =
+        json!({"surface_id": surface_id, "max_depth": max_depth, "max_nodes": max_nodes});
+    if let Some(id) = root_element_id {
+        if !id.starts_with("element_")
+            || id.len() <= "element_".len()
+            || id.len() > MAX_ELEMENT_ID_BYTES
+        {
+            return Err("root_element_id is invalid".into());
+        }
+        payload["root_element_id"] = json!(id);
+    }
+    Ok(payload)
+}
+
+pub(super) fn normalize_accessibility_scope(
+    output: &mut Value,
+    expected_root: Option<&str>,
+) -> Result<(), String> {
+    // Older Runners may ignore unfamiliar input fields. Never accept a full
+    // window tree as the requested subtree, even when every node is valid.
+    if output.get("root_element_id").and_then(Value::as_str) != expected_root
+        || (expected_root.is_none() && output.get("root_element_id").is_some())
+    {
+        return Err("Runner did not confirm the exact accessibility subtree scope; use a matching updated Runner".into());
+    }
+    if let Some(object) = output.as_object_mut() {
+        object.remove("root_element_id");
+    }
+    Ok(())
+}
 pub(super) fn node_matches_find_query(
     node: &Value,
     role: Option<&str>,

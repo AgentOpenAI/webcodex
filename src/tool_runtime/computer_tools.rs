@@ -60,8 +60,9 @@ mod snapshot_receipts;
 mod snapshots;
 #[cfg(test)]
 use accessibility::{
-    filter_accessibility_tree, node_matches_find_query, validate_accessibility_status,
-    validate_accessibility_tree, validate_computer_element_state,
+    accessibility_tree_payload, filter_accessibility_tree, node_matches_find_query,
+    normalize_accessibility_scope, validate_accessibility_status, validate_accessibility_tree,
+    validate_computer_element_state,
 };
 #[cfg(test)]
 use effects::{

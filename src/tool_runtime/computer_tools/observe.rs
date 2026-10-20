@@ -1,6 +1,6 @@
 //! Read-only Computer action routing and bounded target discovery.
 
-use super::accessibility::filter_accessibility_tree;
+use super::accessibility::{accessibility_tree_payload, filter_accessibility_tree};
 use super::effects::computer_error;
 use super::inputs::{effective_snapshot_dimension_bounds, valid_display_id};
 use super::*;
@@ -66,6 +66,7 @@ impl ToolRuntime {
             ComputerObserveToolCall::AccessibilityTree {
                 client_id,
                 surface_id,
+                root_element_id,
                 max_depth,
                 max_nodes,
             } => {
@@ -78,14 +79,19 @@ impl ToolRuntime {
                 let max_nodes = max_nodes
                     .unwrap_or(DEFAULT_ACCESSIBILITY_NODES)
                     .clamp(1, MAX_ACCESSIBILITY_NODES);
+                let payload = match accessibility_tree_payload(
+                    &surface_id,
+                    root_element_id.as_deref(),
+                    max_depth,
+                    max_nodes,
+                ) {
+                    Ok(payload) => payload,
+                    Err(error) => return computer_error("invalid_request", &error),
+                };
                 self.dispatch_computer_request(
                     &client_id,
                     "computer_accessibility_tree",
-                    json!({
-                        "surface_id": surface_id,
-                        "max_depth": max_depth,
-                        "max_nodes": max_nodes,
-                    }),
+                    payload,
                     auth,
                     None,
                     Some(surface_id.as_str()),
@@ -96,6 +102,7 @@ impl ToolRuntime {
             ComputerObserveToolCall::FindElements {
                 client_id,
                 surface_id,
+                root_element_id,
                 role,
                 subrole,
                 label,
@@ -135,15 +142,20 @@ impl ToolRuntime {
                 let limit = limit
                     .unwrap_or(DEFAULT_FIND_ELEMENTS_LIMIT)
                     .clamp(1, MAX_FIND_ELEMENTS_LIMIT);
+                let payload = match accessibility_tree_payload(
+                    &surface_id,
+                    root_element_id.as_deref(),
+                    MAX_ACCESSIBILITY_DEPTH,
+                    MAX_ACCESSIBILITY_NODES,
+                ) {
+                    Ok(payload) => payload,
+                    Err(error) => return computer_error("invalid_request", &error),
+                };
                 let tree = self
                     .dispatch_computer_request(
                         &client_id,
                         "computer_accessibility_tree",
-                        json!({
-                            "surface_id": surface_id,
-                            "max_depth": MAX_ACCESSIBILITY_DEPTH,
-                            "max_nodes": MAX_ACCESSIBILITY_NODES,
-                        }),
+                        payload,
                         auth,
                         None,
                         Some(surface_id.as_str()),

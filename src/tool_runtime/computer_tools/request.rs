@@ -1,5 +1,6 @@
 //! Exact Runner access, capability checks, dispatch and bounded response waiting.
 
+use super::accessibility::normalize_accessibility_scope;
 use super::effects::{
     classify_runner_error, computer_application_effect_delivery_failure,
     computer_application_effect_not_started, computer_application_launch_runner_error,
@@ -43,6 +44,10 @@ impl ToolRuntime {
         expected_surface_id: Option<&str>,
         accessibility_bounds: Option<(usize, usize)>,
     ) -> ToolResult {
+        let expected_root_element_id = payload
+            .get("root_element_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let expected_application_id = payload
             .get("application_id")
             .and_then(Value::as_str)
@@ -452,7 +457,7 @@ impl ToolRuntime {
             }
             return computer_error("runner_error", "Runner computer request failed");
         }
-        let output = match parse_computer_runner_output(
+        let mut output = match parse_computer_runner_output(
             response.stdout.as_deref(),
             response.stdout_truncated,
         ) {
@@ -489,6 +494,13 @@ impl ToolRuntime {
             }
             Err(message) => return computer_error("invalid_runner_response", &message),
         };
+        if kind == "computer_accessibility_tree" {
+            if let Err(message) =
+                normalize_accessibility_scope(&mut output, expected_root_element_id.as_deref())
+            {
+                return computer_error("invalid_runner_response", &message);
+            }
+        }
         validate_computer_response(
             output,
             ComputerResponseContext {

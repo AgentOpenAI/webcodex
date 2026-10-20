@@ -143,8 +143,14 @@ pub(crate) fn handle_computer_operation_with_runtime(
                 .and_then(Value::as_u64)
                 .and_then(|value| usize::try_from(value).ok())
                 .unwrap_or(DEFAULT_ACCESSIBILITY_NODES);
-            surface_id
-                .and_then(|surface_id| runtime.accessibility_tree(surface_id, max_depth, max_nodes))
+            surface_id.and_then(|surface_id| {
+                let root = match payload.get("root_element_id") {
+                    None => None,
+                    Some(Value::String(id)) => Some(id.as_str()),
+                    _ => return Err("invalid_request: root_element_id must be a string".into()),
+                };
+                runtime.accessibility_tree_scoped(surface_id, root, max_depth, max_nodes)
+            })
         }
         RunnerComputerOperationKind::ElementState => {
             ensure_exact_payload_fields(&payload, &["surface_id", "element_id"]).and_then(|()| {
