@@ -204,8 +204,12 @@ fn assert_builtin_workflow(output: &Value) {
         "reuse still-current Git/read/validation/Job facts",
         "continue independent work",
         "For inspection, files/data/artifacts, diagnostics, or coding",
-        "Coding maps cross-layer changes end to end",
-        "compiler/schema/exhaustiveness failures",
+        "Map cross-layer changes end to end",
+        "compiler/schema/exhaustiveness failures reveal gaps",
+        "tests don't prove architectural fit",
+        "Before nontrivial coding",
+        "necessary local refactoring",
+        "Report verified deliverables promptly",
         "Validation failure is evidence, not queue cleanliness",
         "Reuse assertion_name",
         "outcome_unknown fails closed",
@@ -410,7 +414,10 @@ async fn fresh_coding_task_session_loads_all_bounded_repository_rules() {
     }
     let bytes = startup_brief_size(&result.output);
     eprintln!("common_clean_standard_startup_bytes={bytes}");
-    assert!(bytes < 16 * 1024, "{bytes}");
+    // v30 adds architecture discovery/completion and structural review guidance.
+    // Allow that measured prose increment in this common-case regression target;
+    // the independent hard startup and context envelopes remain unchanged.
+    assert!(bytes < 17 * 1024, "{bytes}");
     assert!(bytes <= STANDARD_STARTUP_HARD_MAX_BYTES);
     let serialized = result.output.to_string();
     assert_ne!(
