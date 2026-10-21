@@ -17,6 +17,7 @@ async fn retired_app_resources_fail_closed_instead_of_serving_current_templates(
         "ui://webcodex/agent-continuation/v18",
         "ui://webcodex/agent-continuation/v19",
         "ui://webcodex/agent-continuation/v20",
+        "ui://webcodex/agent-continuation/v21",
         "ui://webcodex/agent-continuation/v2",
         "ui://webcodex/agent-continuation/v3",
         "ui://webcodex/agent-continuation/v4",

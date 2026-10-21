@@ -363,10 +363,75 @@ for (const ref of ["~ac1", "~ac9999999999999999999"]) {
     await flush();
     assert.equal(view.calls("bind_agent_continuation").length, 0);
     assert.equal(view.nodes.status.textContent, "Waiting for Agent connection…");
-    view.toolResult({ agent_continuation: { ...projection, endpoint_id: null } });
-    assert.equal(view.calls("bind_agent_continuation").length, 0);
     view.toolResult({ agent_continuation: projection });
     assert.equal(view.calls("bind_agent_continuation").length, 1);
+  });
+}
+
+const unavailableInitialResults = [
+  ["text-only", { content: [{ type: "text", text: "private-initial-result" }] }],
+  ["tool-error", { isError: true, content: [{ type: "text", text: "private-initial-result" }] }],
+  ["server-error", { structuredContent: { success: false, error: { message: "private-initial-result" } } }],
+  ["missing-projection", toolResult({})],
+  ["invalid-projection", toolResult({ agent_continuation: { ...projection, endpoint_id: null } })],
+  ["error-with-projection", { ...toolResult({ agent_continuation: projection }), isError: true }],
+];
+
+for (const [kind, result] of unavailableInitialResults) {
+  for (const order of [
+    ["initialize", "input", "result"], ["input", "initialize", "result"],
+    ["result", "initialize", "input"], ["initialize", "result", "input"],
+    ["input", "result", "initialize"], ["result", "input", "initialize"],
+  ]) {
+    test(`ref-only final ${kind} closes without binding: ${order.join(" -> ")}`, async () => {
+      const view = app("mcp_agent_continuation_app.html");
+      for (const step of order) {
+        if (step === "initialize") await view.initialize();
+        else if (step === "input") view.toolInput({ agent_continuation_ref: "~ac1" });
+        else view.notification("ui/notifications/tool-result", result);
+      }
+      await flush();
+      assert.equal(view.nodes.binding.textContent, "Unavailable");
+      assert.equal(view.nodes.status.textContent, "Connection unavailable. Agent connection could not be verified.");
+      assert.doesNotMatch(view.nodes.status.textContent, /private-initial-result|~ac|wc_dagent_|wc_endpoint_/);
+      assert.equal(view.sent.filter(message => message.method === "tools/call").length, 0);
+      assert.equal(hostMessages(view).length, 0);
+      assert.equal(view.timers.size, 0);
+      view.toolInput(input);
+      view.toolResult({ agent_continuation: projection });
+      await view.fireTimers(10000);
+      assert.equal(view.calls("bind_agent_continuation").length, 0, "late notifications cannot restart the failed carrier");
+    });
+  }
+
+  test(`a late valid result cannot replace final ${kind} before ref input`, async () => {
+    const view = app("mcp_agent_continuation_app.html");
+    view.notification("ui/notifications/tool-result", result);
+    view.toolResult({ agent_continuation: projection });
+    view.toolInput({ agent_continuation_ref: "~ac1" });
+    await view.initialize();
+    assert.equal(view.calls("bind_agent_continuation").length, 0);
+    assert.equal(view.nodes.binding.textContent, "Unavailable");
+  });
+
+  test(`canonical input retains its authorized bind after final ${kind}`, async () => {
+    const view = app("mcp_agent_continuation_app.html");
+    view.notification("ui/notifications/tool-result", result);
+    view.toolInput(input);
+    await view.initialize();
+    assert.equal(view.calls("bind_agent_continuation").length, 1);
+    assert.deepEqual(businessArgs(view.calls("bind_agent_continuation")[0]), { ...input, binding_id: bindingId(view) });
+    await view.reply(view.calls("bind_agent_continuation")[0], toolResult({ agent_continuation: projection }));
+    assert.equal(view.nodes.binding.textContent, "Connected");
+  });
+
+  test(`late final ${kind} does not tear down an established binding`, async () => {
+    const view = await boundView();
+    view.notification("ui/notifications/tool-result", result);
+    await flush();
+    assert.equal(view.nodes.binding.textContent, "Connected");
+    assert.equal(view.calls("bind_agent_continuation").length, 1);
+    assert.equal(view.calls("unbind_agent_continuation").length, 0);
   });
 }
 

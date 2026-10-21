@@ -77,6 +77,7 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
   const resultAppCallIds = new WeakMap();
   let identity = null;
   let presentationRef = null;
+  let initialResultUnavailable = false;
   let identityEpoch = 0;
   let endpointRecoveryProbeEpoch = -1;
   let bindingId = null;
@@ -892,6 +893,7 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
       // exact authorized Server projection on this presentation's tool-result;
       // it is also authoritative when the Host delivers result before input.
       presentationRef = reference;
+      if (initialResultUnavailable && !identity) acceptIdentity(null);
       return;
     }
     if (!acceptIdentity(args && !Array.isArray(args) && {
@@ -903,8 +905,19 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
   }
 
   function acceptToolResult(result) {
-    const projection = projectionOf(result);
-    if (!projection || !acceptIdentity(projection)) return;
+    if (tornDown || initialResultUnavailable) return;
+    const projection = toolCallSucceeded(result) ? projectionOf(result) : null;
+    if (!projection) {
+      // A final result without identity cannot leave a ref-only carrier waiting.
+      // Remember result-first failure; explicit canonical input keeps its bind
+      // fallback, and a late failed result cannot revoke an established binding.
+      if (!identity) {
+        initialResultUnavailable = true;
+        if (presentationRef !== null) acceptIdentity(null);
+      }
+      return;
+    }
+    if (!acceptIdentity(projection)) return;
     const output = outputOf(result);
     if (output && Object.prototype.hasOwnProperty.call(output, "agent_wait")
       && !acceptWaitReference(output.agent_wait)) return;
@@ -1020,7 +1033,7 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
 
   request("ui/initialize", {
     protocolVersion: APP_PROTOCOL,
-    appInfo: { name: "webcodex-agent-continuation-app", title: "WebCodex Agent Continuation", version: "21.0.0" },
+    appInfo: { name: "webcodex-agent-continuation-app", title: "WebCodex Agent Continuation", version: "22.0.0" },
     appCapabilities: {},
   }).then(() => {
     if (tornDown) return;
