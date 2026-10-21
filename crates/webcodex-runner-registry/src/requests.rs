@@ -14,7 +14,10 @@ use super::validation::{
     validate_file_request, validate_id, validate_process_request, validate_run_request,
     validate_script_enqueue_request,
 };
-use super::{now_ts, RunnerFeature, RunnerFeatureSet, RunnerRegistry, RUNNER_ONLINE_WINDOW_SECS};
+use super::{
+    now_ts, RunnerFeature, RunnerFeatureSet, RunnerRegistry, RunnerRegistryTelemetry,
+    RunnerRequestCancellationReason, RUNNER_ONLINE_WINDOW_SECS,
+};
 use std::fmt;
 use std::time::Instant;
 use tokio::sync::oneshot;
@@ -309,6 +312,19 @@ pub(super) fn take_pending_request_locked(
     request_id: &str,
 ) -> Option<PendingShellRequest> {
     inner.pending_by_id.remove(request_id)
+}
+
+/// Record only synchronous pending-record retirement. Durable Job
+/// correlation remains owned by its authoritative terminal lifecycle.
+pub(super) fn record_sync_request_cancellation(
+    telemetry: &dyn RunnerRegistryTelemetry,
+    pending: &PendingShellRequest,
+    reason: RunnerRequestCancellationReason,
+) {
+    if pending.job_id.is_none() {
+        telemetry.runner_request_cancelled(&pending.request.request_id, pending.dispatched, reason);
+        telemetry.runner_result_finalized(&pending.request.request_id);
+    }
 }
 
 pub(super) fn remove_pending_request_locked(
@@ -1812,7 +1828,13 @@ impl RunnerRegistry {
             inner.plugin_gateway_fences.remove(request_id);
             inner.coding_agent_waiters.remove(request_id);
             inner.coding_agent_fences.remove(request_id);
-            remove_pending_request_locked(&mut inner, request_id);
+            if let Some(pending) = remove_pending_request_locked(&mut inner, request_id) {
+                record_sync_request_cancellation(
+                    self.telemetry.as_ref(),
+                    &pending,
+                    RunnerRequestCancellationReason::WaiterClosed,
+                );
+            }
         }
         abandoned.len()
     }
@@ -1829,7 +1851,14 @@ impl RunnerRegistry {
         inner.plugin_gateway_fences.remove(request_id);
         inner.coding_agent_waiters.remove(request_id);
         inner.coding_agent_fences.remove(request_id);
-        remove_pending_request_locked(&mut inner, request_id).map(|pending| pending.dispatched)
+        remove_pending_request_locked(&mut inner, request_id).map(|pending| {
+            record_sync_request_cancellation(
+                self.telemetry.as_ref(),
+                &pending,
+                RunnerRequestCancellationReason::ExplicitCancel,
+            );
+            pending.dispatched
+        })
     }
 
     /// Enqueue one canonical Runner-local Skill request for one exact live Runner process.

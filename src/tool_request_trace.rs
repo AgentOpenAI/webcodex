@@ -252,6 +252,7 @@ pub(crate) use correlation::capture_runner_result;
 pub(crate) use correlation::finalize_runner_job_correlation;
 pub(crate) use correlation::finalize_runner_result_correlation;
 pub(crate) use correlation::record_runner_request_enqueued;
+pub(crate) use correlation::{record_runner_request_cancelled, record_runner_request_dequeued};
 pub(crate) use lifecycle::capture_effective_arguments;
 pub(crate) use lifecycle::capture_execution_evidence;
 pub(crate) use lifecycle::record_continuation_ids;

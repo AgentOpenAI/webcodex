@@ -3,6 +3,9 @@ use crate::runner_http::{RunnerTransport, TRANSPORT_WEBSOCKET};
 use crate::runner_protocol::{RunnerCapabilities, ShellJobOpRequest};
 use tokio::time::Instant;
 
+#[path = "runner_session_tests/computer_cancellation.rs"]
+mod computer_cancellation;
+
 const SESSION_TEST_TIMEOUT: Duration = Duration::from_millis(250);
 
 struct PendingReader;

@@ -2,6 +2,9 @@ use super::*;
 use serde_json::json;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[path = "tests/runner_cancellation.rs"]
+mod runner_cancellation;
+
 fn payload_files(root: &Path, trace_id: &str) -> Vec<PathBuf> {
     let payload_dir = root.join(trace_id).join("payloads");
     let Ok(entries) = fs::read_dir(payload_dir) else {
@@ -1198,6 +1201,85 @@ async fn runner_correlation_survives_original_dispatch_scope() {
         read_phase("runner_result"),
         json!({"exit_code": 0, "stdout": "ok"})
     );
+}
+
+#[tokio::test]
+async fn metadata_runner_queue_stages_keep_exact_correlation_without_payloads() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut env = crate::test_support::TestEnvGuard::new();
+    env.set("WEBCODEX_TOOL_REQUEST_TRACE", "metadata");
+    env.set(
+        "WEBCODEX_TOOL_REQUEST_TRACE_DIR",
+        temp.path().to_str().unwrap(),
+    );
+    let trace_id = new_trace_id();
+    let guard = ToolRequestLifecycle::new(
+        "mcp",
+        trace_id.clone(),
+        "queue-test",
+        "tools/call",
+        Some("observe_computer".into()),
+    );
+    let payload = json!({"private_payload_sentinel":"never-serialize-queue-stage"});
+    scope_active_trace(guard.active_trace_id(), async {
+        for request in ["queue-abandoned", "queue-live"] {
+            record_runner_request_enqueued(
+                &payload,
+                request,
+                "runner",
+                "computer_list_windows",
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+        }
+    })
+    .await;
+    // Queue telemetry may run on a different request/task from the enqueue.
+    scope_active_trace(Some(new_trace_id()), async {
+        record_runner_request_cancelled(
+            "queue-abandoned",
+            false,
+            webcodex_runner_registry::RunnerRequestCancellationReason::WaiterClosed,
+        );
+        finalize_runner_result_correlation("queue-abandoned");
+        record_runner_request_dequeued("queue-live", Duration::from_micros(1250));
+        record_runner_request_dequeued("queue-abandoned", Duration::ZERO);
+        record_runner_request_cancelled(
+            "unknown-request",
+            false,
+            webcodex_runner_registry::RunnerRequestCancellationReason::WaiterClosed,
+        );
+    })
+    .await;
+    flush_full_trace_writer();
+    let directory = temp.path().join(&trace_id);
+    assert!(!directory.join("payloads").exists());
+    let text = fs::read_to_string(directory.join("events.jsonl")).unwrap();
+    assert!(!text.contains("never-serialize-queue-stage"));
+    let stages: Vec<Value> = text
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .filter(|event| {
+            matches!(
+                event["event"].as_str(),
+                Some("tool_runner_request_cancelled" | "tool_runner_request_dequeued")
+            )
+        })
+        .collect();
+    assert_eq!(stages.len(), 2);
+    assert_eq!(stages[0]["event"], "tool_runner_request_cancelled");
+    assert_eq!(stages[0]["runner_request_id"], "queue-abandoned");
+    assert_eq!(stages[1]["event"], "tool_runner_request_dequeued");
+    assert_eq!(stages[1]["runner_request_id"], "queue-live");
+    assert_eq!(stages[1]["queue_wait_ms"], 1.25);
+    assert!(stages
+        .iter()
+        .all(|event| event["server_trace_id"] == trace_id));
+    finalize_runner_result_correlation("queue-live");
+    drop(guard);
 }
 
 #[test]

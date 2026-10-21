@@ -255,7 +255,7 @@ impl ToolRuntime {
             }
         };
         let requested_by = crate::runner_http::requested_by_from_auth(auth);
-        let (request_id, receiver) = match self
+        let (request_id, mut receiver) = match self
             .runner_registry
             .enqueue_computer(
                 client_id.to_string(),
@@ -296,9 +296,12 @@ impl ToolRuntime {
         };
         let is_effect = computer_request_is_effect(kind);
         let is_text_input = kind == "computer_input_text";
+        // Timeout cleanup still owns the response waiter until it has read
+        // dispatch certainty under the Registry lock. Dropping it earlier lets
+        // queue polling or an abandoned-request sweep erase that evidence.
         let response = match tokio::time::timeout(
             Duration::from_secs(COMPUTER_WAIT_SECS + 2),
-            receiver,
+            &mut receiver,
         )
         .await
         {
