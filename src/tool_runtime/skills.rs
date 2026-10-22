@@ -3,9 +3,7 @@ use super::runtime_metrics::{
     observe_skill_source, RuntimeMetrics, SkillSourceMetricObservation, SkillSourceMetricOperation,
     SkillSourceMetricOutcomeClass, SkillSourceMetricSource,
 };
-use super::startup_catalog::{
-    bounded_extension_description, StartupSkillEntry, StartupSkillsCatalog,
-};
+use super::startup_catalog::{StartupSkillEntry, StartupSkillsCatalog};
 use super::{ExecutionPurpose, SuggestedToolCall, ToolResult, ToolRuntime};
 use crate::auth::AuthContext;
 use crate::json_measurement::serialized_json_len;
@@ -865,6 +863,7 @@ impl ToolRuntime {
         &self,
         project: &ResolvedProject,
         auth: Option<&AuthContext>,
+        relevance: &super::surface::discovery::TaskRelevance,
     ) -> StartupSkillsCatalog {
         let catalog = match self.discover_skills(project, auth).await {
             Ok(catalog) => catalog,
@@ -876,16 +875,17 @@ impl ToolRuntime {
             .map(|skill| StartupSkillEntry {
                 skill_id: skill.descriptor.skill_id.clone(),
                 name: skill.descriptor.name.clone(),
-                description: bounded_extension_description(&skill.descriptor.description),
+                description: skill.descriptor.description.clone(),
                 source_scope: skill.descriptor.source_scope.to_string(),
                 trust: skill.descriptor.trust.to_string(),
                 name_conflict: skill.descriptor.name_conflict,
             })
             .collect();
-        StartupSkillsCatalog::available(
+        StartupSkillsCatalog::available_for_task(
             catalog.catalog_revision,
             catalog.discovery_truncated,
             entries,
+            relevance,
         )
     }
 

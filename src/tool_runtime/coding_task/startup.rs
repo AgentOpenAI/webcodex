@@ -292,7 +292,14 @@ impl ToolRuntime {
         let (startup_complete, startup_completed) = tokio::sync::oneshot::channel();
         let extension_discovery = async {
             if startup.include_extension_catalog {
-                Some(self.extension_discovery_for_startup(&resolved, auth).await)
+                Some(
+                    self.extension_discovery_for_startup(
+                        &resolved,
+                        auth,
+                        title.as_deref().unwrap_or_default(),
+                    )
+                    .await,
+                )
             } else {
                 None
             }
@@ -674,8 +681,10 @@ impl ToolRuntime {
         &self,
         project: &ResolvedProject,
         auth: Option<&AuthContext>,
+        instruction: &str,
     ) -> StartupExtensions {
-        let skills = self.startup_skills_catalog(project, auth);
+        let relevance = super::super::surface::discovery::TaskRelevance::new(instruction);
+        let skills = self.startup_skills_catalog(project, auth, &relevance);
         let plugins = async {
             if auth.is_some_and(|auth| !auth.has_scope(crate::auth::SCOPE_PLUGIN_INSPECT)) {
                 return StartupPluginsCatalog::unavailable("plugin_inspect_scope_unavailable");
@@ -697,10 +706,11 @@ impl ToolRuntime {
                             annotations: entry.annotations,
                         })
                         .collect();
-                    StartupPluginsCatalog::available(
+                    StartupPluginsCatalog::available_for_task(
                         catalog.catalog_revision,
                         catalog.total_count,
                         entries,
+                        &relevance,
                     )
                 }
                 Err(reason_code) => StartupPluginsCatalog::unavailable(reason_code),

@@ -297,6 +297,7 @@ fn startup_plugin_catalog_fixture() -> ProjectPluginCatalog {
 async fn complete_startup_plugin_catalog_request(
     runtime: &ToolRuntime,
     request: crate::runner_protocol::RunnerRequest,
+    catalog: ProjectPluginCatalog,
 ) {
     runtime
         .runner_registry
@@ -309,9 +310,7 @@ async fn complete_startup_plugin_catalog_request(
             command_execution_state: None,
             mcp_gateway: None,
             plugin_gateway: Some(PluginGatewayResponse::success(
-                PluginGatewayResponsePayload::ProjectCatalog {
-                    catalog: startup_plugin_catalog_fixture(),
-                },
+                PluginGatewayResponsePayload::ProjectCatalog { catalog },
             )),
             coding_agent: None,
         })
@@ -732,6 +731,7 @@ async fn dispatch_startup_with_plugin_catalog(
     client_id: &str,
     call: ToolCall,
     auth: &crate::auth::AuthContext,
+    catalog: ProjectPluginCatalog,
 ) -> (ToolResult, Vec<String>) {
     let task = tokio::spawn({
         let runtime = runtime.clone();
@@ -755,7 +755,7 @@ async fn dispatch_startup_with_plugin_catalog(
         {
             assert_eq!(project_id, "demo");
             request_kinds.push("plugin_project_catalog".to_string());
-            complete_startup_plugin_catalog_request(runtime, request).await;
+            complete_startup_plugin_catalog_request(runtime, request, catalog.clone()).await;
         } else if request.kind == AGENT_LSP_REQUEST_KIND {
             request_kinds.push(request.kind.clone());
             complete_patch_agent_request(
