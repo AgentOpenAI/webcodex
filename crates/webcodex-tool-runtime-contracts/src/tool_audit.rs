@@ -1386,6 +1386,7 @@ impl ToolCallAuditProjection for ToolCall {
                 limit,
                 expected_definition_revision,
                 expected_package_revision,
+                expected_resource_sha256,
                 ..
             } => serde_json::json!({
                 "project": project,
@@ -1395,6 +1396,7 @@ impl ToolCallAuditProjection for ToolCall {
                 "limit": limit,
                 "expected_definition_revision": expected_definition_revision,
                 "expected_package_revision": expected_package_revision,
+                "expected_resource_sha256": expected_resource_sha256,
             }),
             Self::SkillVersions {
                 project,

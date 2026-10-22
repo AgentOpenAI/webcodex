@@ -1795,6 +1795,10 @@ pub enum ToolCall {
         #[schemars(regex(pattern = "^wc_skillpkg_[A-Za-z0-9_-]{43}$"))]
         #[serde(default)]
         expected_package_revision: Option<String>,
+        /// Optional full resource SHA-256 guard for safe cross-page continuation.
+        #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
+        #[serde(default)]
+        expected_resource_sha256: Option<String>,
         #[serde(default)]
         session_id: Option<String>,
     },

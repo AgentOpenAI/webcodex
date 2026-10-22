@@ -541,7 +541,7 @@ fn run_runner_skill_read_file_locally(req: &RunnerRequest) -> (i32, String, Stri
     let end_line = req.end_line.unwrap_or(start_line);
     let limit = end_line.saturating_sub(start_line).saturating_add(1);
     let range = EffectiveRange::new(Some(start_line), Some(limit));
-    let result = match file_read_range::read_range_with_budget(
+    let result = match file_read_range::read_page_with_budget(
         &target,
         range,
         req.max_bytes.unwrap_or(48 * 1024),

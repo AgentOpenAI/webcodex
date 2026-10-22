@@ -731,7 +731,7 @@ fn handle_skill_read_file_request(
         .unwrap_or(48 * 1024)
         .min(policy.max_output_bytes)
         .min(file_read_range::MAX_RANGE_CONTENT_BYTES);
-    let result = match file_read_range::read_range_with_budget(&target, range, text_budget) {
+    let result = match file_read_range::read_page_with_budget(&target, range, text_budget) {
         Ok(result) => result,
         Err(error) => {
             return skill_command_error(

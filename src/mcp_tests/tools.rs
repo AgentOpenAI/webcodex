@@ -4425,3 +4425,205 @@ async fn mcp_published_validation_success_sparse_schema_contract() {
         );
     }
 }
+
+#[tokio::test]
+async fn mcp_skill_safe_continuation_executes_projected_gateway_and_preserves_legacy_admission() {
+    use webcodex_workspace::file_read_range::{self, EffectiveRange};
+
+    // Drive the real MCP/kernel path; only the Runner's bounded file I/O is a fixture.
+    async fn call_with_skill_runner(runtime: &ToolRuntime, params: Value) -> Value {
+        let call = tokio::spawn({
+            let runtime = runtime.clone();
+            async move {
+                let mut auth = crate::auth::AuthContext::new(crate::auth::AuthKind::Bootstrap);
+                auth.is_bootstrap = true;
+                handle_mcp_request(
+                    &runtime,
+                    rpc("tools/call", Some(json!(9120)), params),
+                    Some(&auth),
+                )
+                .await
+            }
+        });
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !call.is_finished() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "MCP Skill fixture timed out"
+            );
+            let request = runtime
+                .runner_registry
+                .poll(RunnerPollRequest {
+                    client_id: "mcp-skill-pages".to_string(),
+                    runner_instance_id: "inst".to_string(),
+                })
+                .await
+                .unwrap();
+            let Some(request) = request else {
+                tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+                continue;
+            };
+            let stdout = match request.kind.as_str() {
+                "file_skill_list_packages" => json!({
+                    "format": "webcodex.skill_package_list.v1", "entries": [{"name": "paged", "kind": "dir"}], "truncated": false,
+                }),
+                "file_skill_read_file" => {
+                    let path = std::path::Path::new(request.cwd.as_deref().unwrap())
+                        .join(request.path.as_deref().unwrap());
+                    let start = request.start_line.unwrap();
+                    let limit = request.end_line.unwrap() - start + 1;
+                    let read = file_read_range::read_range_with_budget(
+                        &path,
+                        EffectiveRange::new(Some(start), Some(limit)),
+                        request.max_bytes.unwrap(),
+                    )
+                    .unwrap();
+                    json!({
+                        "format": "webcodex.skill_file_read.v1", "content": read.content, "sha256": read.sha256,
+                        "file_bytes": std::fs::metadata(&path).unwrap().len(), "total_lines": read.total_lines,
+                        "start_line": read.start_line, "limit": read.limit, "returned_lines": read.returned_lines,
+                        "end_line": read.end_line, "has_more": read.has_more, "next_start_line": read.next_start_line,
+                    })
+                }
+                other => panic!("unexpected MCP Skill Runner operation: {other}"),
+            };
+            runtime
+                .runner_registry
+                .complete(RunnerResultRequest {
+                    client_id: "mcp-skill-pages".to_string(),
+                    runner_instance_id: "inst".to_string(),
+                    request_id: request.request_id,
+                    exit_code: Some(0),
+                    stdout: Some(stdout.to_string()),
+                    stderr: Some(String::new()),
+                    stdout_truncated: false,
+                    stderr_truncated: false,
+                    duration_ms: Some(1),
+                    error: None,
+                })
+                .await
+                .unwrap();
+        }
+        let outcome = call.await.unwrap();
+        let McpOutcome::Ok(value) = outcome else {
+            panic!("MCP Skill call failed: {outcome:?}");
+        };
+        assert_eq!(value["result"]["isError"], false, "{value}");
+        value["result"]["structuredContent"]["output"].clone()
+    }
+
+    let root = tempfile::tempdir().unwrap();
+    let directory = root.path().join(".agents/skills/paged");
+    std::fs::create_dir_all(&directory).unwrap();
+    let definition = format!(
+        "---\nname: paged\ndescription: Paged MCP guidance\n---\n{}",
+        (0..405)
+            .map(|n| format!("guidance-{n}\n"))
+            .collect::<String>()
+    );
+    std::fs::write(directory.join("SKILL.md"), &definition).unwrap();
+    let runtime = test_runtime_with_mcp_settings(false, false);
+    runtime
+        .runner_registry
+        .register(crate::test_support::runner_registration(
+            "mcp-skill-pages",
+            "inst",
+            RunnerCapabilities {
+                file_read: true,
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap();
+    crate::test_support::apply_project_inventory_snapshot(
+        &runtime.runner_registry,
+        "mcp-skill-pages",
+        "inst",
+        vec![serde_json::from_value::<RunnerProjectSummary>(
+            json!({"id": "demo", "path": root.path(), "updated_at": 1}),
+        )
+        .unwrap()],
+    )
+    .await;
+    let project = crate::tool_runtime::runner_project_runtime_id("mcp-skill-pages", "demo");
+    for modern in [false, true] {
+        let params = if modern {
+            mcp_2026_params(json!({}))
+        } else {
+            json!({})
+        };
+        let outcome =
+            handle_mcp_request(&runtime, rpc("tools/list", Some(json!(9119)), params), None).await;
+        let McpOutcome::Ok(value) = outcome else {
+            panic!("Skill discovery failed: {outcome:?}");
+        };
+        let schema = &value["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "load_skill")
+            .unwrap()["outputSchema"];
+        let serialized = schema.to_string();
+        assert_eq!(serialized.contains("\"suggested_call\""), modern);
+        if modern {
+            assert!(serialized.contains("\"const\":\"call_runtime_tool\""));
+            assert!(serialized.contains("\"const\":\"read_skill_file\""));
+        }
+    }
+    let load = json!({"name": "load_skill", "arguments": {"project": project, "name": "paged"}});
+    let first = call_with_skill_runner(&runtime, mcp_2026_params(load.clone())).await;
+    let suggested = &first["suggested_call"];
+    assert_eq!(suggested["tool"], "call_runtime_tool");
+    assert_eq!(suggested["follow_up_kind"], "mechanically_followable");
+    assert_eq!(suggested["arguments"]["tool"], "read_skill_file");
+    let inner = &suggested["arguments"]["arguments"];
+    assert_eq!(
+        inner,
+        &json!({
+            "project": project, "skill_id": first["skill_id"], "path": "SKILL.md", "start_line": 401, "limit": 400,
+            "expected_definition_revision": first["definition_revision"], "expected_resource_sha256": first["sha256"],
+        })
+    );
+    let last = call_with_skill_runner(
+        &runtime,
+        mcp_2026_params(json!({"name": suggested["tool"], "arguments": suggested["arguments"]})),
+    )
+    .await;
+    assert_eq!(last["has_more"], false);
+    assert!(last.get("suggested_call").is_none());
+    assert_eq!(last["sha256"], first["sha256"]);
+    assert_eq!(
+        format!(
+            "{}\n{}",
+            first["text"].as_str().unwrap(),
+            last["text"].as_str().unwrap()
+        ),
+        definition.trim_end_matches('\n')
+    );
+
+    let legacy = call_with_skill_runner(&runtime, load).await;
+    assert_eq!(legacy["has_more"], true);
+    assert!(legacy.get("suggested_call").is_none());
+    let denied = handle_mcp_request(
+        &runtime,
+        rpc(
+            "tools/call",
+            Some(json!(9121)),
+            json!({
+                "name": suggested["tool"], "arguments": suggested["arguments"],
+            }),
+        ),
+        None,
+    )
+    .await;
+    let McpOutcome::Ok(denied) = denied else {
+        panic!("expected structured legacy gateway denial: {denied:?}");
+    };
+    assert_eq!(denied["result"]["isError"], true);
+    let rejection = &denied["result"]["structuredContent"];
+    assert_eq!(rejection["success"], false);
+    assert_eq!(rejection["output"]["error_kind"], "unknown_tool");
+    assert_eq!(rejection["output"]["execution_state"], "not_started");
+    assert_eq!(rejection["output"]["state_changed"], false);
+    assert!(rejection["output"].get("text").is_none());
+}

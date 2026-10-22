@@ -2590,3 +2590,33 @@ fn update_goal_completion_conditions_are_optional_and_bounded_in_schema() {
         .unwrap()
         .contains(&json!("completion_conditions")));
 }
+
+#[test]
+fn skill_read_optional_resource_hash_preserves_legacy_calls_and_is_schema_bounded() {
+    let legacy =
+        json!({"project":"agent:runner:project", "skill_id":"wc_skill_AAAAAAAAAAAAAAAAAAAAAA"});
+    let call = ToolCall::from_tool_name("read_skill_file", legacy.clone()).unwrap();
+    assert!(matches!(
+        call,
+        ToolCall::SkillReadFile {
+            expected_resource_sha256: None,
+            session_id: None,
+            ..
+        }
+    ));
+    let mut fenced = legacy;
+    fenced["expected_resource_sha256"] = json!("a".repeat(64));
+    let call = ToolCall::from_tool_name("read_skill_file", fenced).unwrap();
+    assert!(
+        matches!(call, ToolCall::SkillReadFile { expected_resource_sha256: Some(hash), .. } if hash == "a".repeat(64))
+    );
+    let schema = input_schema_for_tool("read_skill_file");
+    assert_eq!(
+        schema["properties"]["expected_resource_sha256"]["pattern"],
+        "^[0-9a-f]{64}$"
+    );
+    assert!(!schema["required"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("expected_resource_sha256")));
+}
