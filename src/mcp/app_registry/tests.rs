@@ -5,10 +5,10 @@ use std::collections::HashSet;
 fn bundled_app_registry_has_unique_exact_identities_and_stable_discovery() {
     let expected = [
         "ui://webcodex/pdf/v7",
-        "ui://webcodex/spreadsheet/v4",
+        "ui://webcodex/spreadsheet/v5",
         "ui://webcodex/computer/v12",
-        "ui://webcodex/workbench/v8",
-        "ui://webcodex/work-result/v35",
+        "ui://webcodex/workbench/v9",
+        "ui://webcodex/work-result/v36",
         "ui://webcodex/goal-plan/v9",
         "ui://webcodex/agent-continuation/v22",
         "ui://webcodex/job-terminal-continuation/v2",

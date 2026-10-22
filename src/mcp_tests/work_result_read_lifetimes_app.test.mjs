@@ -160,6 +160,7 @@ test("explicit pin retains its code and pending diff even when current workspace
   const count = files(view).length;
   await observeWorkspace(view, { workspace: { ...baseState.workspace, clean: true, files: [], files_total: 0, additions: 0, deletions: 0 } });
   assert.equal(view.nodes.workspacePin.getAttribute("aria-pressed"), "true");
+  assert.equal(view.nodes.workspacePin.hidden, false, "pinned files retain the Follow changes action when current workspace is clean");
   assert.equal(view.nodes.workspaceFiles.children[0], row);
   assert.equal(view.nodes.workspaceStatus.textContent, "No uncommitted changes");
   assert.match(view.nodes.workspaceTracking.textContent, /Pinned for review/);

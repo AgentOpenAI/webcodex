@@ -1,5 +1,8 @@
 # Work Result card and review workspace
 
+For the subsequent Appearance, focus and Results action corrections, see
+[Control corrections](controls.md).
+
 Work Result uses the same opaque, neutral surfaces, terminal brand, compact
 controls and flowing selection as Workbench, Desktop and Runtime WebUI. Inline
 cards and fullscreen review keep the same information hierarchy: identity and
