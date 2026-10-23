@@ -119,7 +119,7 @@ fn job_terminal_wait_suggests_only_an_admitted_still_waiting_host_carrier() {
 async fn job_terminal_continuation_app_surface_is_explicit_sparse_and_app_only() {
     assert_eq!(
         MCP_JOB_TERMINAL_CONTINUATION_UI_RESOURCE_URI,
-        "ui://webcodex/job-terminal-continuation/v2"
+        "ui://webcodex/job-terminal-continuation/v3"
     );
     let runtime = ToolRuntime::new_for_tests();
     let auth = job_app_auth();

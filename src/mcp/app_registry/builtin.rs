@@ -15,9 +15,9 @@ pub(in crate::mcp) const MCP_WORK_RESULT_UI_RESOURCE_URI: &str = "ui://webcodex/
 pub(in crate::mcp) const MCP_SPREADSHEET_UI_RESOURCE_URI: &str = "ui://webcodex/spreadsheet/v5";
 pub(in crate::mcp) const MCP_GOAL_PLAN_UI_RESOURCE_URI: &str = "ui://webcodex/goal-plan/v9";
 pub(in crate::mcp) const MCP_AGENT_CONTINUATION_UI_RESOURCE_URI: &str =
-    "ui://webcodex/agent-continuation/v22";
+    "ui://webcodex/agent-continuation/v23";
 pub(in crate::mcp) const MCP_JOB_TERMINAL_CONTINUATION_UI_RESOURCE_URI: &str =
-    "ui://webcodex/job-terminal-continuation/v2";
+    "ui://webcodex/job-terminal-continuation/v3";
 
 pub(in crate::mcp) const MCP_COMPUTER_APP_HTML: &str = include_str!("../../mcp_computer_app.html");
 pub(in crate::mcp) const MCP_RESULT_APP_HTML: &str = include_str!("../../mcp_result_app.html");

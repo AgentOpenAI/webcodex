@@ -364,11 +364,16 @@
     dispatchStartedAttempt = attemptId;
     let outcome = "delivery_unknown";
     try {
-      await request("ui/message", {
+      const hostMessageResult = await request("ui/message", {
         role: "user",
         content: [{ type: "text", text: message }],
       });
-      outcome = "dispatch_accepted";
+      // A Host can resolve ui/message with isError:true instead of rejecting.
+      // Treat anything but an explicit non-error result as unknown; never retry.
+      if (hostMessageResult && typeof hostMessageResult === "object" && !Array.isArray(hostMessageResult)
+        && [undefined, false].includes(hostMessageResult.isError)) {
+        outcome = "dispatch_accepted";
+      }
     } catch (_) {
       // Host rejection, timeout, or response loss after prepare is unknown.
     }
@@ -542,7 +547,7 @@
     appInfo: {
       name: "webcodex-job-terminal-continuation-app",
       title: "WebCodex Job Continuation",
-      version: "1.0.0",
+      version: "3.0.0",
     },
     appCapabilities: {},
   }).then(() => {

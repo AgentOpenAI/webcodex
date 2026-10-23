@@ -10,8 +10,8 @@ fn bundled_app_registry_has_unique_exact_identities_and_stable_discovery() {
         "ui://webcodex/workbench/v9",
         "ui://webcodex/work-result/v36",
         "ui://webcodex/goal-plan/v9",
-        "ui://webcodex/agent-continuation/v22",
-        "ui://webcodex/job-terminal-continuation/v2",
+        "ui://webcodex/agent-continuation/v23",
+        "ui://webcodex/job-terminal-continuation/v3",
         "ui://webcodex/docx/v2",
     ];
     let listed = resources_list(None);
@@ -76,7 +76,9 @@ fn bundled_app_registry_has_unique_exact_identities_and_stable_discovery() {
         "ui://webcodex/agent-continuation/v19",
         "ui://webcodex/agent-continuation/v20",
         "ui://webcodex/agent-continuation/v21",
+        "ui://webcodex/agent-continuation/v22",
         "ui://webcodex/job-terminal-continuation/v1",
+        "ui://webcodex/job-terminal-continuation/v2",
     ] {
         assert!(
             for_uri(retired).is_none(),

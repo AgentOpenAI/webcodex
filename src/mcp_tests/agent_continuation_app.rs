@@ -371,7 +371,7 @@ async fn agent_continuation_direct_presentation_reauthorizes_without_binding_or_
 async fn agent_continuation_app_surface_is_sparse_app_only_without_rendering_bindings() {
     assert_eq!(
         MCP_AGENT_CONTINUATION_UI_RESOURCE_URI,
-        "ui://webcodex/agent-continuation/v22"
+        "ui://webcodex/agent-continuation/v23"
     );
     let (_temp, _db, adaptive) = continuation_runtime();
     let auth = continuation_auth("continuation-surface");
@@ -669,9 +669,15 @@ async fn agent_continuation_app_surface_is_sparse_app_only_without_rendering_bin
             .contains("for (let hop = 0; hop < MAX_ENDPOINT_SUCCESSOR_HOPS; hop++)"),
         "v17 successor recovery must remain explicitly bounded"
     );
+    // Bind Host cache identity and App version rather than hardcoding two versions.
+    let version = MCP_AGENT_CONTINUATION_UI_RESOURCE_URI
+        .rsplit_once("/v")
+        .expect("versioned Agent continuation resource")
+        .1;
+    assert!(version.parse::<u32>().is_ok());
     assert!(
-        MCP_AGENT_CONTINUATION_APP_HTML.contains("version: \"22.0.0\""),
-        "App protocol version must advance with the current resource"
+        MCP_AGENT_CONTINUATION_APP_HTML.contains(&format!("version: \"{version}.0.0\"")),
+        "App version must match its published cache identity"
     );
     assert!(
         MCP_AGENT_CONTINUATION_APP_HTML.contains("const DEBUG_DIAGNOSTICS = false;"),

@@ -1010,6 +1010,44 @@ test("Host dispatch rejection after prepare is unknown and never resent", async 
   assert.equal(hostMessages(view).length, 1);
 });
 
+for (const hostReply of [
+  { isError: true }, { isError: "false" }, null, [],
+]) {
+  test(`resolved ui/message response ${JSON.stringify(hostReply)} never marks Host acceptance or retries`, async () => {
+    const view = await boundView();
+    await view.reply(view.calls("get_agent_continuation_state").at(-1), toolResult({ agent_continuation: projection }));
+    await view.reply(view.calls("acquire_agent_continuation_wake").at(-1), toolResult({ wake }));
+    await view.reply(view.calls("prepare_agent_continuation_wake").at(-1), prepared());
+    assert.equal(hostMessages(view).length, 1);
+    await view.reply(hostMessages(view)[0], hostReply);
+    const finish = view.calls("finish_agent_continuation_wake").at(-1);
+    assert.equal(finish.params.arguments.outcome, "delivery_unknown");
+    await view.reply(finish, toolResult({}));
+    await view.fireTimers(3000);
+    assert.equal(hostMessages(view).length, 1);
+  });
+}
+
+test("Host acceptance and uncertain delivery are distinct, without duplicate follow-up", async () => {
+  const view = await boundView();
+  await view.reply(view.calls("get_agent_continuation_state").at(-1), toolResult({ agent_continuation: projection }));
+  await view.reply(view.calls("acquire_agent_continuation_wake").at(-1), toolResult({ wake }));
+  await view.reply(view.calls("prepare_agent_continuation_wake").at(-1), prepared());
+  await view.reply(hostMessages(view)[0], {isError:false});
+  assert.equal(view.calls("finish_agent_continuation_wake").at(-1).params.arguments.outcome, "dispatch_accepted");
+  await view.reply(view.calls("finish_agent_continuation_wake").at(-1), toolResult({}));
+  await view.fireTimers(3000);
+  await view.reply(view.calls("get_agent_continuation_state").at(-1),
+    toolResult({ agent_continuation: { ...projection, dispatch_observation:"dispatch_accepted" } }));
+  assert.equal(view.nodes.status.textContent, "Host accepted follow-up · awaiting a fresh turn");
+  await view.reply(view.calls("acquire_agent_continuation_wake").at(-1), toolResult({ wake: null }));
+  await view.fireTimers(3000);
+  await view.reply(view.calls("get_agent_continuation_state").at(-1),
+    toolResult({ agent_continuation: { ...projection, dispatch_observation:"dispatch_unknown" } }));
+  assert.equal(view.nodes.status.textContent, "Host delivery unconfirmed · no automatic retry");
+  assert.equal(hostMessages(view).length, 1);
+});
+
 test("Host dispatch timeout is finished as unknown and the same Attempt is never resent", async () => {
   const view = await boundView();
   await view.reply(view.calls("get_agent_continuation_state").at(-1), toolResult({ agent_continuation: projection }));

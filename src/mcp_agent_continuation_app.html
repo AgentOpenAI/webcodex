@@ -589,6 +589,10 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
     el("binding").textContent = "Connected";
     if (projection.dispatch_observation === "continuation_consumed") {
       el("status").textContent = "Work resumed successfully";
+    } else if (projection.dispatch_observation === "dispatch_unknown") {
+      el("status").textContent = "Host delivery unconfirmed · no automatic retry";
+    } else if (projection.dispatch_observation === "dispatch_accepted") {
+      el("status").textContent = "Host accepted follow-up · awaiting a fresh turn";
     } else if (document.hidden) {
       el("status").textContent = projection.wake ? "Continuing queued work in background…" : "Connected in background";
     } else if (projection.wake) {
@@ -749,10 +753,16 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
     timing("host_dispatch_start");
     let outcome = "delivery_unknown";
     try {
-      await request("ui/message", {
+      const hostMessageResult = await request("ui/message", {
         role: "user",
         content: [{ type: "text", text: automaticMessage }],
       });
+      // A Host can resolve ui/message with isError:true instead of rejecting.
+      // Acceptance is not a new model turn and never licenses a blind retry.
+      if (!hostMessageResult || typeof hostMessageResult !== "object" || Array.isArray(hostMessageResult)
+        || ![undefined, false].includes(hostMessageResult.isError)) {
+        throw hostFailure("malformed-result");
+      }
       outcome = "dispatch_accepted";
     } catch (_) {
       // After prepare, Host rejection/timeout/response loss is conservatively unknown.
@@ -1033,7 +1043,7 @@ h1 { margin: 0; font-size: 15px; font-weight: 650; overflow-wrap: anywhere; }
 
   request("ui/initialize", {
     protocolVersion: APP_PROTOCOL,
-    appInfo: { name: "webcodex-agent-continuation-app", title: "WebCodex Agent Continuation", version: "22.0.0" },
+    appInfo: { name: "webcodex-agent-continuation-app", title: "WebCodex Agent Continuation", version: "23.0.0" },
     appCapabilities: {},
   }).then(() => {
     if (tornDown) return;
