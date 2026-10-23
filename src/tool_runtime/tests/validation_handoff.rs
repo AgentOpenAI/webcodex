@@ -86,6 +86,10 @@ pub(super) async fn complete_project_validation_plan_request(
             .as_ref()
             .and_then(|test| test.filter.as_deref()),
     )
+    .unwrap()
+    .with_dependency_policy(semantic.dependency_policy)
+    .unwrap()
+    .with_dependency_resolution_policy(semantic.dependency_resolution_policy)
     .unwrap();
     let adapter = operation.evidence_profile();
     let step = if backend == "node" && check == webcodex_validation::SemanticCheck::Test {

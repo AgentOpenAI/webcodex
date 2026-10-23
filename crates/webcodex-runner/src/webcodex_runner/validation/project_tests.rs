@@ -1347,7 +1347,22 @@ fn rust_clippy_plan_identity_and_queue_fence() {
         .contains("validation_plan_stale"));
     let mut offline = req;
     offline.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
-    assert!(project::plan(&policy, &registry, &offline).is_err());
+    let (offline_plan, _) = project::plan(&policy, &registry, &offline).unwrap();
+    assert_eq!(
+        offline_plan.step.args,
+        [
+            "clippy",
+            "--offline",
+            "--all-targets",
+            "--",
+            "-D",
+            "clippy::correctness"
+        ]
+    );
+    assert_ne!(
+        offline_plan.validation_target_id,
+        substituted.validation_target_id.unwrap()
+    );
 }
 
 #[test]
@@ -1416,6 +1431,31 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
     );
     assert!(all.step.is_project_workspace_cargo());
     assert_ne!(all.validation_target_id, selected.validation_target_id);
+    let mut offline = scoped.clone();
+    offline.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
+    let offline_plan = project::plan(&policy, &registry, &offline).unwrap().0;
+    assert_eq!(
+        offline_plan.step.args,
+        [
+            "clippy",
+            "--locked",
+            "--offline",
+            "--all-targets",
+            "--workspace",
+            "--exclude",
+            "b",
+            "--",
+            "-D",
+            "clippy::correctness"
+        ]
+    );
+    assert_ne!(offline_plan.validation_target_id, all.validation_target_id);
+    project::fence(
+        &policy,
+        &registry,
+        &start_project_validation_operation(&offline_plan, &root),
+    )
+    .unwrap();
     let operation = start_project_validation_operation(&all, &root);
     project::fence(&policy, &registry, &operation).unwrap();
 
@@ -1454,4 +1494,78 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
     fs::write(root.join("nested/Cargo.toml"), "[workspace]\nmembers=[]\n").unwrap();
     scoped.cwd = Some("nested".into());
     assert!(project::plan(&policy, &registry, &scoped).is_err());
+}
+
+#[test]
+fn rust_clippy_offline_provenance_survives_recovery_and_rejects_policy_drift() {
+    let (_tmp, root, registry, policy) = fixture("Cargo.toml");
+    for hint in [
+        ProjectValidationAdapter::Rust,
+        ProjectValidationAdapter::Auto,
+    ] {
+        for locked in [false, true] {
+            let mut req = request(ProjectValidationAction::Lint);
+            req.adapter = hint;
+            req.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
+            req.dependency_policy = locked.then_some(ProjectDependencyPolicy {
+                mode: ProjectDependencyMode::Locked,
+            });
+            let (plan, _) = project::plan(&policy, &registry, &req).unwrap();
+            assert!(plan.step.args.contains(&"--offline".into()));
+            assert_eq!(plan.step.args.contains(&"--locked".into()), locked);
+            let recovered: ProjectValidationPlan =
+                serde_json::from_str(&serde_json::to_string(&plan).unwrap()).unwrap();
+            let operation = start_project_validation_operation(&recovered, &root);
+            project::fence(&policy, &registry, &operation).unwrap();
+            let mut drifted = plan.clone();
+            drifted.step.args.retain(|arg| arg != "--offline");
+            assert!(project::fence(
+                &policy,
+                &registry,
+                &start_project_validation_operation(&drifted, &root)
+            )
+            .is_err());
+            let mut drifted = plan.clone();
+            drifted.provenance.request.dependency_resolution_policy = None;
+            assert!(project::fence(
+                &policy,
+                &registry,
+                &start_project_validation_operation(&drifted, &root)
+            )
+            .is_err());
+            let mut online = req.clone();
+            online.dependency_resolution_policy = None;
+            let online = project::plan(&policy, &registry, &online).unwrap().0;
+            assert_ne!(plan.validation_target_id, online.validation_target_id);
+            assert_ne!(
+                plan.provenance.invocation_digest,
+                online.provenance.invocation_digest
+            );
+        }
+    }
+    for hint in [
+        ProjectValidationAdapter::Node,
+        ProjectValidationAdapter::Go,
+        ProjectValidationAdapter::Python,
+    ] {
+        let mut req = request(ProjectValidationAction::Lint);
+        req.adapter = hint;
+        req.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
+        assert!(project::plan(&policy, &registry, &req).is_err());
+    }
+}
+
+#[test]
+fn rust_clippy_offline_auto_rejects_resolved_node_before_execution() {
+    let (_tmp, root, registry, policy) = fixture("package.json");
+    fs::write(
+        root.join("package.json"),
+        r#"{"scripts":{"lint":"echo lint"}}"#,
+    )
+    .unwrap();
+    let mut req = request(ProjectValidationAction::Lint);
+    req.dependency_resolution_policy = Some(ProjectDependencyResolutionPolicy::Offline);
+    assert!(matches!(project::plan(&policy, &registry, &req),
+        Err(ProjectValidationPlanningResult::Unavailable { code, detected_backend })
+            if code == "dependency_resolution_policy_unsupported" && detected_backend.as_deref() == Some("node")));
 }

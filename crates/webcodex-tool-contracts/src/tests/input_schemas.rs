@@ -1599,12 +1599,12 @@ fn rust_clippy_uses_project_validate_without_new_tool_or_argv() {
     for phrase in [
         "cargo clippy --all-targets -- -D clippy::correctness",
         "project_validation_rust_clippy_v1",
-        "Rust lint explicitly rejects offline",
+        "project_validation_rust_clippy_offline_v1",
     ] {
         assert!(spec.description.contains(phrase), "{phrase}");
     }
     for hint in ["rust", "auto"] {
-        let value = json!({"project":"demo", "action":"lint", "adapter":hint, "scope":{"packages":["demo"]}, "dependency_policy":{"mode":"locked"}});
+        let value = json!({"project":"demo", "action":"lint", "adapter":hint, "scope":{"packages":["demo"]}, "dependency_policy":{"mode":"locked"}, "dependency_resolution_policy":"offline"});
         test_support::validate_schema_instance(&value, &spec.input_schema).unwrap();
         assert!(ToolCall::from_tool_name("project_validate", value).is_ok());
     }

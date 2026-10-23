@@ -307,7 +307,7 @@ impl ShellJobValidationStep {
                     && args[1..args.len() - 3].iter().all(|a| {
                         !matches!(
                             *a,
-                            "--offline" | "--all-features" | "--no-default-features" | "--features"
+                            "--all-features" | "--no-default-features" | "--features"
                         )
                     })
                     && is_canonical_cargo_flags(

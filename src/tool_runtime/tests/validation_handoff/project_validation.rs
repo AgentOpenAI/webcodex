@@ -16,6 +16,9 @@ async fn setup(grace_ms: u64) -> ToolRuntime {
             structured_cargo_check_packages: true,
             project_validation_v1: true,
             project_validation_rust_clippy_v1: true,
+            project_validation_rust_clippy_offline_v1: true,
+            project_dependency_resolution_offline_v1: true,
+            project_dependency_policy_v1: true,
             project_go_single_module_v1: true,
             project_validation_package_scope_v1: true,
             project_all_packages_v1: true,
@@ -1208,88 +1211,158 @@ async fn node_json_project_validation_handoff_owns_counts_and_keeps_freshness_un
 
 #[tokio::test]
 async fn rust_clippy_pending_observes_same_job_and_exit_status_controls_outcome() {
-    for (exit, status, stderr) in [
-        (
-            0,
-            "completed",
-            "warning: unused variable: `x`\n --> src/lib.rs:1:5\n",
-        ),
-        (
-            101,
-            "failed",
-            "error: impossible comparison\n --> src/lib.rs:1:5\n",
-        ),
-    ] {
-        let runtime = setup(1).await;
-        let task = tokio::spawn({
-            let runtime = runtime.clone();
-            async move {
-                runtime
-                    .dispatch_with_auth(
-                        call(ProjectValidationAction::Lint, None),
-                        Some(&auth_context(None, true)),
-                    )
-                    .await
-            }
-        });
-        let (request, job_id) = reply_plan(&runtime, "rust", ProjectValidationAction::Lint).await;
-        let metadata = request
-            .job_context
-            .as_ref()
-            .unwrap()
-            .validation
-            .as_ref()
-            .unwrap();
-        assert_eq!(metadata.adapter, "cargo_clippy");
-        assert_eq!(metadata.kind, "lint");
-        assert!(metadata.is_valid());
-        let result = task.await.unwrap();
-        assert!(result.success, "{result:?}");
-        assert_eq!(
-            result.output["continuation"]["arguments"]["items"][0]["job_id"],
-            job_id
-        );
-        assert_model_cargo_result_matches_schema("project_validate", &result);
-        assert!(probe_patch_agent_request(&runtime, "project-validation")
-            .await
-            .is_none());
-        runtime
-            .runner_registry
-            .update_job(cargo_test_update(
-                "project-validation",
-                &request.request_id,
-                &job_id,
-                status,
-                "",
-                stderr,
-                Some(exit),
-                completed_progress(),
-                true,
-            ))
-            .await
-            .unwrap();
-        let observed = runtime
-            .job_status_for_auth(job_id.clone(), false, None)
-            .await;
-        assert_eq!(
-            observed.output["validation"]["passed"],
-            exit == 0,
-            "{observed:?}"
-        );
-        assert_eq!(observed.output["validation"]["adapter"], "cargo_clippy");
-        assert_eq!(
-            observed.output["validation"].get("warnings_count"),
-            Some(&json!(u64::from(exit == 0)))
-        );
-        assert_eq!(
-            observed.output["validation"].get("errors_count"),
-            Some(&json!(u64::from(exit != 0)))
-        );
-        // Re-observation retains the same Job and its structured evidence.
-        let retained = runtime.job_status_for_auth(job_id, false, None).await;
-        assert_eq!(retained.output["validation"], observed.output["validation"]);
-        assert!(probe_patch_agent_request(&runtime, "project-validation")
-            .await
-            .is_none());
+    for offline in [false, true] {
+        for (exit, status, stderr) in [
+            (
+                0,
+                "completed",
+                "warning: unused variable: `x`\n --> src/lib.rs:1:5\n",
+            ),
+            (
+                101,
+                "failed",
+                "error: impossible comparison\n --> src/lib.rs:1:5\n",
+            ),
+        ] {
+            let runtime = setup(1).await;
+            let task = tokio::spawn({
+                let runtime = runtime.clone();
+                async move {
+                    let mut invocation = call(ProjectValidationAction::Lint, None);
+                    if offline {
+                        let ToolCall::ProjectValidate {
+                            dependency_resolution_policy,
+                            dependency_policy,
+                            ..
+                        } = &mut invocation
+                        else {
+                            unreachable!()
+                        };
+                        *dependency_resolution_policy =
+                            Some(ProjectDependencyResolutionPolicy::Offline);
+                        *dependency_policy = Some(ProjectDependencyPolicy {
+                            mode: ProjectDependencyMode::Locked,
+                        });
+                    }
+                    runtime
+                        .dispatch_with_auth(invocation, Some(&auth_context(None, true)))
+                        .await
+                }
+            });
+            let (request, job_id) =
+                reply_plan(&runtime, "rust", ProjectValidationAction::Lint).await;
+            // Exercise the real Server emission contract across the JSON transport
+            // boundary; a typed planning mock alone cannot prove wire decoding.
+            let wire: crate::runner_protocol::RunnerRequest =
+                serde_json::from_slice(&serde_json::to_vec(&request).unwrap()).unwrap();
+            let decoded = wire.decode_operation();
+            assert!(
+                matches!(
+                    decoded,
+                    Ok(webcodex_core::runner_operation::RunnerOperation::Job(
+                        webcodex_core::runner_operation::RunnerJobOperation::StartValidation(_)
+                    ))
+                ),
+                "emitted validation wire must decode: {decoded:?}"
+            );
+            let envelope = crate::runner_protocol::RunnerEnvelope::Request {
+                request: wire.clone(),
+            };
+            let encoded = envelope.to_json().unwrap();
+            let envelope = crate::runner_protocol::RunnerEnvelope::from_slice(encoded.as_bytes())
+                .expect("actual validation transport envelope must deserialize");
+            let crate::runner_protocol::RunnerEnvelope::Request {
+                request: transported,
+            } = envelope
+            else {
+                panic!("expected validation request transport envelope");
+            };
+            let transported_operation = transported.decode_operation();
+            assert!(
+                matches!(
+                    transported_operation,
+                    Ok(webcodex_core::runner_operation::RunnerOperation::Job(
+                        webcodex_core::runner_operation::RunnerJobOperation::StartValidation(_)
+                    ))
+                ),
+                "actual validation envelope must preserve operation: {transported_operation:?}"
+            );
+            let context = wire.job_context.as_ref().unwrap();
+            assert!(context
+                .runtime_project_id
+                .as_ref()
+                .unwrap()
+                .starts_with("agent:project-validation:"));
+            assert!(context
+                .validation
+                .as_ref()
+                .unwrap()
+                .source_fence
+                .as_ref()
+                .is_some_and(|fence| fence.is_valid()));
+            let metadata = request
+                .job_context
+                .as_ref()
+                .unwrap()
+                .validation
+                .as_ref()
+                .unwrap();
+            assert_eq!(metadata.adapter, "cargo_clippy");
+            assert_eq!(metadata.kind, "lint");
+            assert_eq!(
+                metadata.steps[0].args.contains(&"--offline".into()),
+                offline
+            );
+            assert_eq!(metadata.steps[0].args.contains(&"--locked".into()), offline);
+            assert!(metadata.is_valid());
+            let result = task.await.unwrap();
+            assert!(result.success, "{result:?}");
+            assert_eq!(
+                result.output["continuation"]["arguments"]["items"][0]["job_id"],
+                job_id
+            );
+            assert_model_cargo_result_matches_schema("project_validate", &result);
+            assert!(probe_patch_agent_request(&runtime, "project-validation")
+                .await
+                .is_none());
+            runtime
+                .runner_registry
+                .update_job(cargo_test_update(
+                    "project-validation",
+                    &request.request_id,
+                    &job_id,
+                    status,
+                    "",
+                    stderr,
+                    Some(exit),
+                    completed_progress(),
+                    true,
+                ))
+                .await
+                .unwrap();
+            let observed = runtime
+                .job_status_for_auth(job_id.clone(), false, None)
+                .await;
+            assert_eq!(
+                observed.output["validation"]["passed"],
+                exit == 0,
+                "{observed:?}"
+            );
+            assert_eq!(observed.output["validation"]["adapter"], "cargo_clippy");
+            assert_eq!(
+                observed.output["validation"].get("warnings_count"),
+                Some(&json!(u64::from(exit == 0)))
+            );
+            assert_eq!(
+                observed.output["validation"].get("errors_count"),
+                Some(&json!(u64::from(exit != 0)))
+            );
+            // Re-observation retains the same Job and its structured evidence.
+            let retained = runtime.job_status_for_auth(job_id, false, None).await;
+            assert_eq!(retained.output["validation"], observed.output["validation"]);
+            assert!(probe_patch_agent_request(&runtime, "project-validation")
+                .await
+                .is_none());
+        }
     }
 }

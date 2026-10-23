@@ -882,6 +882,88 @@ async fn rust_clippy_old_runner_is_fenced_at_planning_and_job_admission() {
 }
 
 #[tokio::test]
+async fn rust_clippy_offline_requires_dedicated_capability_before_planning_and_admission() {
+    for hint in [
+        ProjectValidationAdapter::Rust,
+        ProjectValidationAdapter::Auto,
+    ] {
+        let registry = RunnerRegistry::default();
+        let mut runner = registration(true);
+        runner.capabilities.project_validation_rust_clippy_v1 = true;
+        runner.capabilities.project_dependency_resolution_offline_v1 = true;
+        runner
+            .capabilities
+            .project_validation_rust_clippy_offline_v1 = false;
+        registry.register(runner).await.unwrap();
+        let request = ProjectValidationRequest {
+            action: ProjectValidationAction::Lint,
+            adapter: hint,
+            dependency_resolution_policy: Some(ProjectDependencyResolutionPolicy::Offline),
+            ..locked_validation_request()
+        };
+        let error = registry
+            .enqueue_project_validation_plan(
+                "policy-runner".into(),
+                request.clone(),
+                Some(&auth_context(None, true)),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("project_validation_rust_clippy_offline_v1"),
+            "{error}"
+        );
+        let mut metadata = locked_validation_metadata();
+        metadata.project_validation.as_mut().unwrap().request = request;
+        metadata.adapter = "cargo_clippy".into();
+        metadata.kind = "lint".into();
+        metadata.steps[0].name = "lint".into();
+        metadata.steps[0].args = [
+            "clippy",
+            "--locked",
+            "--offline",
+            "--all-targets",
+            "--",
+            "-D",
+            "clippy::correctness",
+        ]
+        .map(str::to_string)
+        .to_vec();
+        assert!(metadata.is_valid());
+        let error = registry
+            .start_job(
+                job_start_request(
+                    JobStartExecution::Validation {
+                        plan: JobValidationPlan::Metadata(metadata),
+                        ssh_resource: None,
+                    },
+                    "validation",
+                ),
+                "test".into(),
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("project_validation_rust_clippy_offline_v1"),
+            "{error}"
+        );
+        assert!(registry.list_jobs(Some(10)).await.is_empty());
+        assert!(registry
+            .poll(RunnerPollRequest {
+                client_id: "policy-runner".into(),
+                runner_instance_id: "inst".into()
+            })
+            .await
+            .unwrap()
+            .is_none());
+    }
+}
+
+#[tokio::test]
 async fn rust_clippy_activity_preserves_terminal_result_and_rejects_wrong_phase_or_source() {
     use webcodex_core::runner_protocol::{
         ShellJobActivity, ShellJobActivityPhase, ShellJobActivitySource, ShellJobActivityState,

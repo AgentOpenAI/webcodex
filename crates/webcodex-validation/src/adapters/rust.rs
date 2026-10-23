@@ -171,9 +171,6 @@ impl ValidationAdapter for RustValidationAdapter {
                 )
             }
             RustAdapterKind::Clippy => {
-                if options.dependency_resolution_policy.is_some() {
-                    return Err("dependency_resolution_policy_unsupported".into());
-                }
                 let mut options = options;
                 options.all_targets = Some(true);
                 let plan = cargo_check_plan(options)?;

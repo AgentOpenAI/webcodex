@@ -374,6 +374,55 @@ fn project_validation_workspace_exclusions_are_rust_all_packages_only() {
 }
 
 #[test]
+fn rust_workspace_clippy_exclusions_compose_with_locked_offline() {
+    use crate::project_validation_operation_with_excluded_packages;
+    use webcodex_core::project_validation::{
+        ProjectDependencyMode, ProjectDependencyPolicy, ProjectDependencyResolutionPolicy,
+    };
+
+    let baseline = project_validation_operation_with_excluded_packages(
+        "rust",
+        SemanticCheck::Lint,
+        None,
+        true,
+        vec!["alpha".into(), "beta".into()],
+    )
+    .unwrap();
+    let combined = baseline
+        .clone()
+        .with_dependency_policy(Some(ProjectDependencyPolicy {
+            mode: ProjectDependencyMode::Locked,
+        }))
+        .unwrap()
+        .with_dependency_resolution_policy(Some(ProjectDependencyResolutionPolicy::Offline))
+        .unwrap();
+    let step = combined.build_readonly_plan().unwrap().structured_step;
+    assert_eq!(
+        step.args,
+        [
+            "clippy",
+            "--locked",
+            "--offline",
+            "--all-targets",
+            "--workspace",
+            "--exclude",
+            "alpha",
+            "--exclude",
+            "beta",
+            "--",
+            "-D",
+            "clippy::correctness",
+        ]
+    );
+    assert!(step.is_project_workspace_cargo());
+    assert!(!step.is_canonical());
+    assert_ne!(
+        baseline.validation_target_id(Some(".")),
+        combined.validation_target_id(Some(".")),
+    );
+}
+
+#[test]
 fn go_check_semantic_operation_uses_canonical_vet_adapter() {
     let operation =
         ReadOnlyValidationOperation::Go(GoReadOnlyValidationOperation::Check(GoCheckOptions {
@@ -1272,10 +1321,43 @@ fn rust_clippy_scope_policy_identity_and_evidence_are_distinct() {
             "clippy::correctness"
         ]
     );
-    assert!(lint
+    let offline = lint
         .clone()
         .with_dependency_resolution_policy(Some(ProjectDependencyResolutionPolicy::Offline))
-        .is_err());
+        .unwrap();
+    assert_ne!(plain, offline.validation_target_id(Some(".")));
+    let offline_step = offline.build_readonly_plan().unwrap().structured_step;
+    assert_eq!(
+        offline_step.args,
+        [
+            "clippy",
+            "--offline",
+            "--all-targets",
+            "--",
+            "-D",
+            "clippy::correctness"
+        ]
+    );
+    assert!(offline_step.is_canonical());
+    let both = locked
+        .with_dependency_resolution_policy(Some(ProjectDependencyResolutionPolicy::Offline))
+        .unwrap();
+    assert_ne!(
+        offline.validation_target_id(Some(".")),
+        both.validation_target_id(Some("."))
+    );
+    assert_eq!(
+        both.build_readonly_plan().unwrap().structured_step.args,
+        [
+            "clippy",
+            "--locked",
+            "--offline",
+            "--all-targets",
+            "--",
+            "-D",
+            "clippy::correctness"
+        ]
+    );
     assert!(lint.clone().with_test_filter(Some("a")).is_err());
     for backend in ["go", "python", "node"] {
         assert!(project_validation_operation(backend, SemanticCheck::Lint, None, false).is_err());
@@ -1312,6 +1394,7 @@ fn rust_clippy_scope_policy_identity_and_evidence_are_distinct() {
         vec!["clippy", "--all-targets", "--", "-D", "warnings"],
         vec![
             "clippy",
+            "--offline",
             "--offline",
             "--all-targets",
             "--",

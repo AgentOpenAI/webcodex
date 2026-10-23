@@ -739,6 +739,19 @@ impl JobStartPlan {
                     .any(|step| step.program == "cargo" && step.name == "lint"),
                 RunnerFeature::ProjectValidationRustClippy,
             ),
+            (
+                validation_provenance.is_some_and(|p| {
+                    p.backend == "rust"
+                        && p.request.action
+                            == webcodex_core::project_validation::ProjectValidationAction::Lint
+                        && p.request.dependency_resolution_policy.is_some()
+                }) || steps.iter().any(|step| {
+                    step.program == "cargo"
+                        && step.name == "lint"
+                        && step.args.iter().any(|arg| arg == "--offline")
+                }),
+                RunnerFeature::ProjectValidationRustClippyOffline,
+            ),
             (node_test, RunnerFeature::ProjectValidationNodeTap),
             (
                 project_test_options || go_test_filter,

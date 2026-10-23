@@ -3363,64 +3363,125 @@ fn runner_real_process_rust_clippy_warnings_pass_and_correctness_fails() {
             .to_vec(),
         env: vec![],
     };
-    for (source, success, diagnostic) in [
-        (
-            "pub fn warning() -> i32 { return 1; }\n",
-            true,
-            "clippy::needless_return",
-        ),
-        (
-            "pub fn broken(x: i32) -> bool { x > 1 && x < 0 }\n",
-            false,
-            "clippy::impossible_comparisons",
-        ),
-    ] {
-        let temp = tempfile::tempdir().unwrap();
-        std::fs::create_dir(temp.path().join("src")).unwrap();
-        std::fs::write(
-            temp.path().join("Cargo.toml"),
-            "[package]\nname='clippy_fixture'\nversion='0.1.0'\nedition='2021'\n[workspace]\n",
-        )
-        .unwrap();
-        std::fs::write(temp.path().join("src/lib.rs"), source).unwrap();
-        let cargo_home = temp.path().join("cargo-home");
-        std::fs::create_dir(&cargo_home).unwrap();
-        // Cover global and project aliases, including a command with an effect.
-        let (config_dir, alias) = if success {
-            (cargo_home.clone(), "version")
-        } else {
-            let config_dir = temp.path().join(".cargo");
-            std::fs::create_dir(&config_dir).unwrap();
-            (config_dir, "!echo alias-executed > alias-side-effect")
-        };
-        std::fs::write(
-            config_dir.join("config.toml"),
-            format!("[alias]\nclippy = '{alias}'\n"),
-        )
-        .unwrap();
-        let mut shell = ShellConfig::default();
-        shell.env.insert(
-            "CARGO_HOME".into(),
-            cargo_home.to_string_lossy().into_owned(),
-        );
-        shell.env.insert("CARGO_NET_OFFLINE".into(), "true".into());
-        shell.env.insert(
-            "CARGO_TARGET_DIR".into(),
-            temp.path().join("target").to_string_lossy().into_owned(),
-        );
-        let mut command = configured_clippy_job_command(&shell, None, &step, temp.path(), None)
-            .expect("Clippy must be installed for explicit real-process evidence");
-        command.env("CARGO_TERM_COLOR", "never");
-        let (status, stdout, stderr) =
-            run_prepare_command(command, Duration::from_secs(30), None).unwrap();
-        let output = format!(
-            "{}{}",
-            String::from_utf8_lossy(&stdout),
-            String::from_utf8_lossy(&stderr)
-        );
-        assert_eq!(status.success(), success, "{output}");
-        assert!(output.contains(diagnostic), "{output}");
-        assert!(stdout.is_empty(), "{output}");
-        assert!(!temp.path().join("alias-side-effect").exists());
+    for offline in [false, true] {
+        let mut step = step.clone();
+        if offline {
+            step.args.insert(1, "--offline".into());
+        }
+        for (source, success, diagnostic) in [
+            (
+                "pub fn warning() -> i32 { return 1; }\n",
+                true,
+                "clippy::needless_return",
+            ),
+            (
+                "pub fn broken(x: i32) -> bool { x > 1 && x < 0 }\n",
+                false,
+                "clippy::impossible_comparisons",
+            ),
+        ] {
+            let temp = tempfile::tempdir().unwrap();
+            std::fs::create_dir(temp.path().join("src")).unwrap();
+            std::fs::write(
+                temp.path().join("Cargo.toml"),
+                "[package]\nname='clippy_fixture'\nversion='0.1.0'\nedition='2021'\n[workspace]\n",
+            )
+            .unwrap();
+            std::fs::write(temp.path().join("src/lib.rs"), source).unwrap();
+            let cargo_home = temp.path().join("cargo-home");
+            std::fs::create_dir(&cargo_home).unwrap();
+            // Cover global and project aliases, including a command with an effect.
+            let (config_dir, alias) = if success {
+                (cargo_home.clone(), "version")
+            } else {
+                let config_dir = temp.path().join(".cargo");
+                std::fs::create_dir(&config_dir).unwrap();
+                (config_dir, "!echo alias-executed > alias-side-effect")
+            };
+            std::fs::write(
+                config_dir.join("config.toml"),
+                format!("[alias]\nclippy = '{alias}'\n"),
+            )
+            .unwrap();
+            let mut shell = ShellConfig::default();
+            shell.env.insert(
+                "CARGO_HOME".into(),
+                cargo_home.to_string_lossy().into_owned(),
+            );
+            shell.env.insert("CARGO_NET_OFFLINE".into(), "true".into());
+            shell.env.insert(
+                "CARGO_TARGET_DIR".into(),
+                temp.path().join("target").to_string_lossy().into_owned(),
+            );
+            let mut command = configured_clippy_job_command(&shell, None, &step, temp.path(), None)
+                .expect("Clippy must be installed for explicit real-process evidence");
+            command.env("CARGO_TERM_COLOR", "never");
+            let (status, stdout, stderr) =
+                run_prepare_command(command, Duration::from_secs(30), None).unwrap();
+            let output = format!(
+                "{}{}",
+                String::from_utf8_lossy(&stdout),
+                String::from_utf8_lossy(&stderr)
+            );
+            assert_eq!(status.success(), success, "{output}");
+            assert!(output.contains(diagnostic), "{output}");
+            assert!(stdout.is_empty(), "{output}");
+            assert!(!temp.path().join("alias-side-effect").exists());
+        }
     }
+}
+
+#[cfg(feature = "runner-real-process-tests")]
+#[test]
+#[ignore = "requires installed Cargo Clippy; run explicitly with --ignored"]
+fn runner_real_process_rust_clippy_offline_missing_cache_fails_without_retry() {
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::create_dir(temp.path().join("src")).unwrap();
+    std::fs::write(
+        temp.path().join("src/lib.rs"),
+        "pub fn value() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(temp.path().join("Cargo.toml"), "[package]\nname='clippy_offline_fixture'\nversion='0.1.0'\nedition='2021'\n[workspace]\n[dependencies]\nserde='=1.0.228'\n").unwrap();
+    let cargo_home = temp.path().join("cargo-home");
+    std::fs::create_dir(&cargo_home).unwrap();
+    let mut shell = ShellConfig::default();
+    shell.env.insert(
+        "CARGO_HOME".into(),
+        cargo_home.to_string_lossy().into_owned(),
+    );
+    shell.env.insert(
+        "CARGO_TARGET_DIR".into(),
+        temp.path().join("target").to_string_lossy().into_owned(),
+    );
+    let step = webcodex_core::runner_protocol::ShellJobValidationStep {
+        name: "lint".into(),
+        program: "cargo".into(),
+        args: [
+            "clippy",
+            "--offline",
+            "--all-targets",
+            "--",
+            "-D",
+            "clippy::correctness",
+        ]
+        .map(str::to_string)
+        .to_vec(),
+        env: vec![],
+    };
+    assert!(step.is_canonical());
+    let mut command = configured_clippy_job_command(&shell, None, &step, temp.path(), None)
+        .expect("Clippy must be installed for explicit real-process evidence");
+    command.env("CARGO_TERM_COLOR", "never");
+    let (status, stdout, stderr) =
+        run_prepare_command(command, Duration::from_secs(30), None).unwrap();
+    let output = format!(
+        "{}{}",
+        String::from_utf8_lossy(&stdout),
+        String::from_utf8_lossy(&stderr)
+    );
+    assert!(!status.success(), "{output}");
+    assert!(output.contains("serde"), "{output}");
+    assert!(output.contains("offline"), "{output}");
+    assert!(!temp.path().join("Cargo.lock").exists());
 }

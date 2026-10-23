@@ -2863,6 +2863,10 @@ impl RunnerRegistry {
             .is_some_and(|scope| !scope.exclude_packages.is_empty());
         let requires_dependency_policy = payload.dependency_policy.is_some();
         let requires_resolution_offline = payload.dependency_resolution_policy.is_some();
+        // Offline lint is Rust-only even with auto selection, so fence before planning.
+        let clippy_offline_capability = (requires_resolution_offline
+            && payload.action == webcodex_core::project_validation::ProjectValidationAction::Lint)
+            .then_some(RunnerFeature::ProjectValidationRustClippyOffline);
         let requires_test_options = payload.test.is_some();
         let request_id = next_request_id();
         let (tx, rx) = oneshot::channel();
@@ -2882,6 +2886,7 @@ impl RunnerRegistry {
             [
                 Some(RunnerFeature::ProjectValidation),
                 clippy_capability,
+                clippy_offline_capability,
                 python_capability,
                 node_capability,
                 requires_all_packages.then_some(RunnerFeature::ProjectAllPackages),

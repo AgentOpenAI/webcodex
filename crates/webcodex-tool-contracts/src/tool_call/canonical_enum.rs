@@ -1577,7 +1577,7 @@ pub enum ToolCall {
         cwd: Option<String>,
         /// check uses Runner priority (check/typecheck/lint); lint selects only the
         /// Node lint script with check identity, or Rust Clippy with distinct lint evidence.
-        /// Rust lint fixes --all-targets -- -D clippy::correctness; offline policy is unsupported.
+        /// Rust lint fixes --all-targets -- -D clippy::correctness; offline adds Cargo --offline.
         action: webcodex_core::project_validation::ProjectValidationAction,
         /// Omission means auto. Rust and Go are supported; Python supports test through pytest and
         /// check/format_check through project-local Ruff with explicit target-version.
