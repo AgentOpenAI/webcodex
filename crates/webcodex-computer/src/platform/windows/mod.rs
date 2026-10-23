@@ -88,9 +88,9 @@ use windows::{
         },
         UI::WindowsAndMessaging::{
             CreateWindowExW, DestroyWindow, GetCursorPos, GetForegroundWindow, GetSystemMetrics,
-            IsIconic, ShowWindowAsync, EDD_GET_DEVICE_INTERFACE_NAME, HWND_MESSAGE,
-            SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-            SW_RESTORE, SW_SHOWNOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE,
+            GetWindowThreadProcessId, IsIconic, ShowWindowAsync, EDD_GET_DEVICE_INTERFACE_NAME,
+            HWND_MESSAGE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+            SM_YVIRTUALSCREEN, SW_RESTORE, SW_SHOWNOACTIVATE, WINDOW_EX_STYLE, WINDOW_STYLE,
         },
     },
 };

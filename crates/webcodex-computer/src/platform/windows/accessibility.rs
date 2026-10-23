@@ -960,6 +960,27 @@ pub(crate) fn windows_scroll_attempt_error(operation: &str) -> String {
 }
 
 #[cfg(windows)]
+fn wait_for_window_activation(
+    expires_at: Instant,
+    mut observe: impl FnMut() -> (Instant, bool),
+    mut wait: impl FnMut(Duration),
+) -> Result<(), String> {
+    loop {
+        let (now, foreground) = observe();
+        let remaining = expires_at.saturating_duration_since(now);
+        if remaining.is_zero() {
+            return Err(windows_window_activation_attempt_error(
+                "IUIAutomationElement::SetFocus postcondition timeout",
+            ));
+        }
+        if foreground {
+            return Ok(());
+        }
+        wait(remaining.min(Duration::from_millis(10)));
+    }
+}
+
+#[cfg(windows)]
 pub(crate) fn activate_window(surface_id: &str, surface: &SurfaceRecord) -> Result<Value, String> {
     // Resolve the exact xcap identity immediately before the first native
     // effect. This never falls back to an application name, PID, or title.
@@ -1012,7 +1033,7 @@ pub(crate) fn activate_window(surface_id: &str, surface: &SurfaceRecord) -> Resu
 
     // A background Runner is normally denied by SetForegroundWindow.
     // UI Automation's exact SetFocus is the native automation primitive;
-    // once attempted, any error or mismatched postcondition is uncertain.
+    // once attempted, any error or unconfirmed postcondition is uncertain.
     if let Err(error) = context.deadline.ensure_remaining() {
         if prior_effect {
             return Err(windows_window_activation_attempt_error(&error));
@@ -1025,17 +1046,94 @@ pub(crate) fn activate_window(surface_id: &str, surface: &SurfaceRecord) -> Resu
             error.code().0 as u32
         )));
     }
-    if unsafe { GetForegroundWindow() != hwnd } {
-        return Err(windows_window_activation_attempt_error(
-            "IUIAutomationElement::SetFocus postcondition",
-        ));
-    }
+    // The provider may return before the foreground transition is visible.
+    // Observe the same exact HWND/PID without repeating focus or another effect.
+    // The confirmation interval also remains inside the shared UIA deadline.
+    wait_for_window_activation(
+        context
+            .deadline
+            .expires_at
+            .min(Instant::now() + Duration::from_secs(1)),
+        || {
+            let mut pid = 0;
+            let foreground = unsafe {
+                GetWindowThreadProcessId(hwnd, Some(&mut pid));
+                pid == surface.pid && GetForegroundWindow() == hwnd
+            };
+            (Instant::now(), foreground)
+        },
+        std::thread::sleep,
+    )?;
 
     Ok(json!({
         "platform": "windows",
         "surface_id": surface_id,
         "success": true,
     }))
+}
+
+#[cfg(all(test, windows))]
+mod window_activation_tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn window_activation_confirms_delayed_foreground_without_another_effect() {
+        let start = Instant::now();
+        let now = Cell::new(start);
+        let observations = Cell::new(0);
+        wait_for_window_activation(
+            start + Duration::from_secs(1),
+            || {
+                observations.set(observations.get() + 1);
+                (now.get(), now.get() >= start + Duration::from_millis(30))
+            },
+            |delay| now.set(now.get() + delay),
+        )
+        .unwrap();
+        assert_eq!(observations.get(), 4);
+        assert_eq!(now.get() - start, Duration::from_millis(30));
+    }
+
+    #[test]
+    fn window_activation_requires_exact_foreground_within_the_bound() {
+        let start = Instant::now();
+        let now = Cell::new(start);
+        // Also exercise a final partial polling interval.
+        let bound = Duration::from_millis(25);
+        let error = wait_for_window_activation(
+            start + bound,
+            || (now.get(), false),
+            |delay| now.set(now.get() + delay),
+        )
+        .unwrap_err();
+        assert_eq!(now.get() - start, bound);
+        assert!(error.starts_with("outcome_unknown:"), "{error}");
+        assert!(error.contains("postcondition timeout"), "{error}");
+    }
+
+    #[test]
+    fn window_activation_confirmation_respects_an_expired_shared_deadline() {
+        let now = Instant::now();
+        let error = wait_for_window_activation(
+            now,
+            || (now, true),
+            |_| panic!("an expired confirmation must not wait"),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("outcome_unknown:"), "{error}");
+    }
+
+    #[test]
+    fn window_activation_already_confirmed_does_not_wait() {
+        let now = Instant::now();
+        wait_for_window_activation(
+            now + Duration::from_secs(1),
+            || (now, true),
+            |_| panic!("a confirmed foreground must not wait"),
+        )
+        .unwrap();
+    }
 }
 
 #[cfg(windows)]
