@@ -200,6 +200,7 @@ async fn project_build_scope_capability_error_identifies_runner_without_dispatch
     request.scope = Some(webcodex_core::project_build::ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let error = registry
         .enqueue_project_build_plan("build-runner".into(), request, Some(&access))
@@ -226,6 +227,63 @@ async fn project_build_scope_capability_error_identifies_runner_without_dispatch
         .await
         .unwrap()
         .is_none());
+}
+
+#[tokio::test]
+async fn project_build_workspace_exclusions_capability_gates_planning_and_admission() {
+    let registry = RunnerRegistry::default();
+    let access = auth_context(None, true);
+    let mut registration = registration(true);
+    registration.capabilities.project_all_packages_v1 = true;
+    registration.capabilities.project_workspace_exclusions_v1 = false;
+    registry.register(registration.clone()).await.unwrap();
+
+    let mut request = build_request();
+    request.scope = Some(webcodex_core::project_build::ProjectBuildScope {
+        packages: Vec::new(),
+        all_packages: true,
+        exclude_packages: vec!["crate-a".into()],
+    });
+    let mut empty_exclusions = request.clone();
+    empty_exclusions
+        .scope
+        .as_mut()
+        .unwrap()
+        .exclude_packages
+        .clear();
+    assert!(registry
+        .enqueue_project_build_plan("build-runner".into(), empty_exclusions, Some(&access),)
+        .await
+        .is_ok());
+
+    let error = registry
+        .enqueue_project_build_plan("build-runner".into(), request.clone(), Some(&access))
+        .await
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("project_workspace_exclusions_v1"));
+    assert!(registry.list_jobs(Some(10)).await.is_empty());
+
+    let mut plan = build_plan();
+    plan.provenance.request = request.clone();
+    plan.process = canonical_project_build_process("rust", &plan.provenance.request).unwrap();
+    plan.provenance.invocation_digest = project_build_invocation_digest(&plan.process);
+    let error = registry
+        .start_job(build_job_request(plan), "test".into(), Some(&access), None)
+        .await
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("project_workspace_exclusions_v1"));
+    assert!(registry.list_jobs(Some(10)).await.is_empty());
+
+    registration.capabilities.project_workspace_exclusions_v1 = true;
+    registry.register(registration).await.unwrap();
+    assert!(registry
+        .enqueue_project_build_plan("build-runner".into(), request, Some(&access))
+        .await
+        .is_ok());
 }
 
 #[tokio::test]

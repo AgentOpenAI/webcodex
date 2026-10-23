@@ -132,7 +132,21 @@ impl ProjectValidationRequest {
                 ProjectOperationScopeError::InvalidPackage => {
                     "invalid project validation package scope".to_string()
                 }
+                ProjectOperationScopeError::ExclusionRequiresAllPackages => {
+                    "exclude_packages requires all_packages=true".to_string()
+                }
+                ProjectOperationScopeError::ExclusionCount => {
+                    "exclude_packages must contain at most 8 items".to_string()
+                }
+                ProjectOperationScopeError::InvalidExclusion => {
+                    "invalid excluded package name".to_string()
+                }
             })?;
+            if self.action == ProjectValidationAction::FormatCheck
+                && !scope.exclude_packages.is_empty()
+            {
+                return Err("workspace_exclusions_unsupported: format_check".into());
+            }
         }
         if self.dependency_resolution_policy.is_some() {
             if self.action == ProjectValidationAction::Lint {

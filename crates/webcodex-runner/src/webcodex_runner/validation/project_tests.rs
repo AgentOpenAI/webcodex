@@ -177,6 +177,7 @@ fn project_node_validation_rejects_other_actions_and_options() {
     request.scope = Some(ProjectValidationScope {
         packages: vec!["app".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     assert!(matches!(
         project::plan(&policy, &registry, &request),
@@ -335,6 +336,7 @@ fn project_validation_recipe_step_and_identity_preserve_normalized_selection() {
             req.scope = Some(ProjectValidationScope {
                 packages: packages.into_iter().map(str::to_string).collect(),
                 all_packages: false,
+                exclude_packages: Vec::new(),
             });
             req.dependency_policy = Some(ProjectDependencyPolicy {
                 mode: ProjectDependencyMode::Locked,
@@ -475,6 +477,7 @@ fn project_validation_package_scope_maps_through_canonical_operations() {
         req.scope = Some(ProjectValidationScope {
             packages: packages.into_iter().map(str::to_string).collect(),
             all_packages: false,
+            exclude_packages: Vec::new(),
         });
         let (plan, _) = project::plan(&policy, &registry, &req).unwrap();
         assert_eq!(plan.adapter, adapter);
@@ -531,6 +534,7 @@ fn project_validation_package_scope_fails_closed_when_action_or_backend_scope_is
     format.scope = Some(ProjectValidationScope {
         packages: vec!["package-a".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     assert!(matches!(
         project::plan(&policy, &registry, &format),
@@ -542,6 +546,7 @@ fn project_validation_package_scope_fails_closed_when_action_or_backend_scope_is
     invalid_rust.scope = Some(ProjectValidationScope {
         packages: vec!["-bad".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     assert!(matches!(
         project::plan(&policy, &registry, &invalid_rust),
@@ -554,6 +559,7 @@ fn project_validation_package_scope_fails_closed_when_action_or_backend_scope_is
     invalid_go.scope = Some(ProjectValidationScope {
         packages: vec!["not-relative".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     assert!(matches!(
         project::plan(&policy, &registry, &invalid_go),
@@ -788,6 +794,7 @@ fn project_validation_python_pytest_detects_explicit_and_auto_and_fences_config(
     req.scope = Some(ProjectValidationScope {
         packages: vec!["tests".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     assert!(
         matches!(project::plan(&policy, &registry, &req), Err(ProjectValidationPlanningResult::Unavailable {code,..}) if code == "validation_scope_unsupported")
@@ -795,6 +802,7 @@ fn project_validation_python_pytest_detects_explicit_and_auto_and_fences_config(
     req.scope = Some(ProjectValidationScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     assert!(
         matches!(project::plan(&policy, &registry, &req), Err(ProjectValidationPlanningResult::Unavailable {code,..}) if code == "validation_scope_unsupported")
@@ -888,6 +896,7 @@ fn project_validation_all_packages_target_member_change_fails_queue_fence() {
     req.scope = Some(ProjectValidationScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project::plan(&policy, &registry, &req).unwrap();
     assert!(plan.step.args.iter().any(|arg| arg == "--workspace"));
@@ -930,6 +939,7 @@ fn project_validation_all_packages_member_symlink_retarget_fails_queue_fence() {
     req.scope = Some(ProjectValidationScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project::plan(&policy, &registry, &req).unwrap();
     let operation = start_project_validation_operation(&plan, &cwd);
@@ -965,6 +975,7 @@ fn project_validation_all_packages_recursive_glob_cycle_fails_queue_fence() {
     req.scope = Some(ProjectValidationScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project::plan(&policy, &registry, &req).unwrap();
     let operation = start_project_validation_operation(&plan, &cwd);
@@ -991,6 +1002,7 @@ fn project_validation_all_packages_parent_workspace_appearance_fails_queue_fence
     req.scope = Some(ProjectValidationScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project::plan(&policy, &registry, &req).unwrap();
     let operation = start_project_validation_operation(&plan, &cwd);
@@ -1034,6 +1046,7 @@ fn project_validation_all_packages_rejects_excluded_recipe_cwd() {
         req.scope = Some(ProjectValidationScope {
             packages: Vec::new(),
             all_packages: true,
+            exclude_packages: Vec::new(),
         });
         assert!(
             matches!(project::plan(&policy, &registry, &req), Err(ProjectValidationPlanningResult::Unavailable { code, .. }) if code == "validation_scope_unavailable")
@@ -1360,6 +1373,7 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
     scoped.scope = Some(ProjectValidationScope {
         packages: vec!["b".into(), "a".into(), "a".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     let selected = project::plan(&policy, &registry, &scoped).unwrap().0;
     assert_eq!(
@@ -1380,6 +1394,7 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
     scoped.scope = Some(ProjectValidationScope {
         packages: vec![],
         all_packages: true,
+        exclude_packages: vec!["b".into()],
     });
     scoped.dependency_policy = Some(ProjectDependencyPolicy {
         mode: ProjectDependencyMode::Locked,
@@ -1392,6 +1407,8 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
             "--locked",
             "--all-targets",
             "--workspace",
+            "--exclude",
+            "b",
             "--",
             "-D",
             "clippy::correctness"
@@ -1401,6 +1418,18 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
     assert_ne!(all.validation_target_id, selected.validation_target_id);
     let operation = start_project_validation_operation(&all, &root);
     project::fence(&policy, &registry, &operation).unwrap();
+
+    for excluded in [
+        vec!["missing".to_string()],
+        vec!["a".to_string(), "b".to_string()],
+    ] {
+        scoped.scope = Some(ProjectValidationScope {
+            packages: vec![],
+            all_packages: true,
+            exclude_packages: excluded,
+        });
+        assert!(project::plan(&policy, &registry, &scoped).is_err());
+    }
     fs::write(
         root.join("a/Cargo.toml"),
         "[package]\nname='a'\nversion='0.2.0'\nedition='2021'\n",
@@ -1409,6 +1438,11 @@ fn rust_clippy_workspace_scope_and_locked_policy_are_fenced() {
     assert!(project::fence(&policy, &registry, &operation)
         .unwrap_err()
         .contains("validation_plan_stale"));
+    scoped.scope = Some(ProjectValidationScope {
+        packages: vec![],
+        all_packages: true,
+        exclude_packages: vec!["b".into()],
+    });
     let changed = project::plan(&policy, &registry, &scoped).unwrap().0;
     assert_ne!(
         all.provenance.manifest_digest,

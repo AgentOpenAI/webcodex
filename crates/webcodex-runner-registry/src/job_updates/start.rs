@@ -641,6 +641,8 @@ impl JobStartPlan {
             (build.is_some_and(|plan| plan.provenance.backend == "python"), RunnerFeature::ProjectBuildPython),
             (build.is_some_and(|plan| plan.provenance.request.scope.as_ref().is_some_and(webcodex_core::project_build::ProjectBuildScope::selects_all_packages))
                 || validation_provenance.and_then(|provenance| provenance.request.scope.as_ref()).is_some_and(webcodex_core::project_validation::ProjectValidationScope::selects_all_packages), RunnerFeature::ProjectAllPackages),
+            (build.is_some_and(|plan| plan.provenance.request.scope.as_ref().is_some_and(|scope| !scope.exclude_packages.is_empty()))
+                || validation_provenance.and_then(|provenance| provenance.request.scope.as_ref()).is_some_and(|scope| !scope.exclude_packages.is_empty()), RunnerFeature::ProjectWorkspaceExclusions),
             (build.is_some_and(|plan| plan.provenance.request.dependency_policy.is_some())
                 || validation_provenance.is_some_and(|provenance| provenance.request.dependency_policy.is_some()), RunnerFeature::ProjectDependencyPolicy),
             (build.is_some_and(|plan| plan.provenance.request.dependency_resolution_policy.is_some())

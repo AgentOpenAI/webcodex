@@ -521,7 +521,7 @@ fn validate_test_count_evidence(
 fn validation_activity_phase(step: &str) -> Option<ShellJobActivityPhase> {
     match step {
         "format" => Some(ShellJobActivityPhase::ValidationFormat),
-        "check" => Some(ShellJobActivityPhase::ValidationCheck),
+        "check" | "lint" => Some(ShellJobActivityPhase::ValidationCheck),
         "test" => Some(ShellJobActivityPhase::ValidationTest),
         _ => None,
     }

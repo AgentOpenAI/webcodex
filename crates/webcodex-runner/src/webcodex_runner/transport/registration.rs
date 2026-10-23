@@ -268,6 +268,7 @@ pub(crate) fn runner_register_capabilities(cfg: &RunnerConfig) -> RunnerCapabili
     // Server/Runner deployments fail closed before sending the expanded request.
     capabilities.set(RunnerCapabilityId::ProjectValidationPackageScope, true);
     capabilities.set(RunnerCapabilityId::ProjectAllPackages, true);
+    capabilities.set(RunnerCapabilityId::ProjectWorkspaceExclusions, true);
     capabilities.set(RunnerCapabilityId::ProjectValidationTestOptions, true);
     capabilities.set(RunnerCapabilityId::ProjectValidationPythonPytest, true);
     capabilities.set(RunnerCapabilityId::ProjectValidationPythonRuff, true);

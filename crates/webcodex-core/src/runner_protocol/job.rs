@@ -535,6 +535,34 @@ pub fn normalize_cargo_packages(
     Ok(Some(normalized))
 }
 
+/// Canonical exact package names used by Cargo workspace exclusions. Patterns,
+/// path specs and version-qualified package IDs are intentionally unavailable.
+pub fn normalize_cargo_excluded_packages(packages: &[String]) -> Result<Vec<String>, &'static str> {
+    if packages.is_empty() {
+        return Ok(Vec::new());
+    }
+    if packages.len() > 8 {
+        return Err("exclude_packages must contain at most 8 items");
+    }
+    let mut normalized = packages
+        .iter()
+        .map(|package| {
+            let value = normalize_cargo_value(package)?
+                .ok_or("exclude_packages cannot contain an empty name")?;
+            if !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                return Err("exclude_packages must use exact package names");
+            }
+            Ok(value)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    normalized.sort_unstable();
+    normalized.dedup();
+    Ok(normalized)
+}
+
 /// Normalize one bounded project-relative Go package scope.
 /// Omission preserves the canonical `./...` project scope; an explicit list
 /// must contain one to eight already-normalized project-relative patterns.
@@ -701,8 +729,28 @@ fn is_canonical_cargo_flags(
 ) -> bool {
     let mut seen = HashSet::new();
     let mut seen_packages = HashSet::new();
+    let mut seen_exclusions = Vec::new();
     let mut iter = args.iter();
     while let Some(arg) = iter.next() {
+        if *arg == "--exclude" {
+            if !allow_project_workspace {
+                return false;
+            }
+            let Some(value) = iter.next() else {
+                return false;
+            };
+            let Some(normalized) = normalize_cargo_excluded_packages(&[(*value).to_string()])
+                .ok()
+                .and_then(|mut values| values.pop())
+            else {
+                return false;
+            };
+            if normalized != **value || seen_exclusions.iter().any(|item| item == *value) {
+                return false;
+            }
+            seen_exclusions.push((*value).to_string());
+            continue;
+        }
         let key = match *arg {
             "--all-targets"
             | "--all-features"
@@ -749,6 +797,10 @@ fn is_canonical_cargo_flags(
         }
     }
     !(seen.contains("--workspace") && !seen_packages.is_empty())
+        && (seen_exclusions.is_empty()
+            || (seen.contains("--workspace")
+                && normalize_cargo_excluded_packages(&seen_exclusions)
+                    .is_ok_and(|normalized| normalized == seen_exclusions)))
 }
 
 fn node_script_allowed(kind: &str, script: &str) -> bool {

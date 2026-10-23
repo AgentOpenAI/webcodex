@@ -62,6 +62,15 @@ impl ProjectBuildRequest {
                 ProjectOperationScopeError::InvalidPackage => {
                     "invalid project build package scope".to_string()
                 }
+                ProjectOperationScopeError::ExclusionRequiresAllPackages => {
+                    "exclude_packages requires all_packages=true".to_string()
+                }
+                ProjectOperationScopeError::ExclusionCount => {
+                    "exclude_packages must contain at most 8 items".to_string()
+                }
+                ProjectOperationScopeError::InvalidExclusion => {
+                    "invalid excluded package name".to_string()
+                }
             })?;
         }
         if self.dependency_resolution_policy.is_some()
@@ -183,6 +192,15 @@ pub fn canonical_project_build_process_with_manager(
         .scope
         .as_ref()
         .is_some_and(ProjectBuildScope::selects_all_packages);
+    let excluded_packages = request
+        .scope
+        .as_ref()
+        .map(ProjectBuildScope::normalized_exclude_packages)
+        .transpose()?
+        .unwrap_or_default();
+    if !excluded_packages.is_empty() && backend != "rust" {
+        return Err("workspace_exclusions_unsupported");
+    }
     match backend {
         "rust" => {
             let packages = normalize_cargo_packages(None, packages)?;
@@ -200,6 +218,10 @@ pub fn canonical_project_build_process_with_manager(
             }
             if all_packages {
                 args.push("--workspace".to_string());
+                for package in &excluded_packages {
+                    args.push("--exclude".to_string());
+                    args.push(package.clone());
+                }
             } else if let Some(packages) = packages {
                 for package in packages {
                     args.push("-p".to_string());
@@ -221,6 +243,9 @@ pub fn canonical_project_build_process_with_manager(
             })
         }
         "go" => {
+            if !excluded_packages.is_empty() {
+                return Err("workspace_exclusions_unsupported");
+            }
             let packages = normalize_go_packages(if all_packages { None } else { packages })?;
             let mut args = vec!["build".to_string()];
             if request

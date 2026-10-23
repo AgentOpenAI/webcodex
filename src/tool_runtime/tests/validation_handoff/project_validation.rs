@@ -19,6 +19,7 @@ async fn setup(grace_ms: u64) -> ToolRuntime {
             project_go_single_module_v1: true,
             project_validation_package_scope_v1: true,
             project_all_packages_v1: true,
+            project_workspace_exclusions_v1: false,
             project_validation_test_options_v1: true,
             project_validation_python_pytest_v1: true,
             project_validation_python_ruff_v1: true,
@@ -67,6 +68,7 @@ fn call_with_scope(
         scope: packages.map(|packages| ProjectValidationScope {
             packages,
             all_packages: false,
+            exclude_packages: Vec::new(),
         }),
         dependency_policy: None,
         dependency_resolution_policy: None,
@@ -432,6 +434,7 @@ async fn project_validation_package_scope_requires_additive_runner_capability() 
             project_validation_rust_clippy_v1: true,
             project_validation_package_scope_v1: false,
             project_all_packages_v1: false,
+            project_workspace_exclusions_v1: false,
             ..Default::default()
         },
     )
@@ -471,6 +474,7 @@ async fn project_validation_all_packages_requires_additive_runner_capability() {
             project_validation_rust_clippy_v1: true,
             project_validation_package_scope_v1: true,
             project_all_packages_v1: false,
+            project_workspace_exclusions_v1: false,
             ..Default::default()
         },
     )
@@ -483,6 +487,7 @@ async fn project_validation_all_packages_requires_additive_runner_capability() {
     *scope = Some(ProjectValidationScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
 
     let result = runtime
@@ -490,6 +495,49 @@ async fn project_validation_all_packages_requires_additive_runner_capability() {
         .await;
     assert!(!result.success);
     assert!(result.error.unwrap().contains("project_all_packages_v1"));
+    assert!(runtime.runner_registry.list_jobs(Some(10)).await.is_empty());
+    assert!(probe_patch_agent_request(&runtime, "project-validation")
+        .await
+        .is_none());
+}
+
+#[tokio::test]
+async fn project_validation_workspace_exclusion_requires_additive_runner_capability() {
+    let runtime = runtime_with_agent_project("project-validation");
+    register_agent(
+        &runtime,
+        "project-validation",
+        None,
+        RunnerCapabilities {
+            async_shell_jobs: true,
+            structured_validation_argv: true,
+            project_validation_v1: true,
+            project_validation_rust_clippy_v1: true,
+            project_validation_package_scope_v1: true,
+            project_all_packages_v1: true,
+            project_workspace_exclusions_v1: false,
+            ..Default::default()
+        },
+    )
+    .await;
+    let mut scoped = call(ProjectValidationAction::Check, None);
+    let ToolCall::ProjectValidate { scope, .. } = &mut scoped else {
+        unreachable!()
+    };
+    *scope = Some(ProjectValidationScope {
+        packages: Vec::new(),
+        all_packages: true,
+        exclude_packages: vec!["package-b".into()],
+    });
+
+    let result = runtime
+        .dispatch_with_auth(scoped, Some(&auth_context(None, true)))
+        .await;
+    assert!(!result.success);
+    assert!(result
+        .error
+        .unwrap()
+        .contains("project_workspace_exclusions_v1"));
     assert!(runtime.runner_registry.list_jobs(Some(10)).await.is_empty());
     assert!(probe_patch_agent_request(&runtime, "project-validation")
         .await
@@ -518,6 +566,7 @@ async fn project_validation_test_options_reject_before_any_plan_on_old_runner() 
             project_validation_rust_clippy_v1: true,
             project_validation_package_scope_v1: true,
             project_all_packages_v1: true,
+            project_workspace_exclusions_v1: false,
             ..Default::default()
         },
     )
@@ -867,6 +916,7 @@ async fn project_validation_all_packages_dispatches_and_completes_same_wire_job(
         *scope = Some(ProjectValidationScope {
             packages: Vec::new(),
             all_packages: true,
+            exclude_packages: Vec::new(),
         });
         let task = tokio::spawn({
             let runtime = runtime.clone();

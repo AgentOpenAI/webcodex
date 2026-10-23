@@ -374,6 +374,20 @@ async fn project_validation_optional_capability_errors_identify_runner_without_d
                 scope: Some(ProjectValidationScope {
                     packages: Vec::new(),
                     all_packages: true,
+                    exclude_packages: Vec::new(),
+                }),
+                dependency_policy: None,
+                dependency_resolution_policy: None,
+                ..locked_validation_request()
+            },
+        ),
+        (
+            RunnerCapabilityId::ProjectWorkspaceExclusions,
+            ProjectValidationRequest {
+                scope: Some(ProjectValidationScope {
+                    packages: Vec::new(),
+                    all_packages: true,
+                    exclude_packages: vec!["crate".into()],
                 }),
                 dependency_policy: None,
                 dependency_resolution_policy: None,
@@ -408,6 +422,7 @@ async fn project_validation_optional_capability_errors_identify_runner_without_d
                 scope: Some(ProjectValidationScope {
                     packages: vec!["crate".into()],
                     all_packages: false,
+                    exclude_packages: Vec::new(),
                 }),
                 dependency_policy: None,
                 dependency_resolution_policy: None,
@@ -420,6 +435,9 @@ async fn project_validation_optional_capability_errors_identify_runner_without_d
         let registry = RunnerRegistry::default();
         let access = auth_context(None, true);
         let mut registration = registration(true);
+        if capability == RunnerCapabilityId::ProjectWorkspaceExclusions {
+            registration.capabilities.project_all_packages_v1 = true;
+        }
         registration.capabilities.set(capability, false);
         registry.register(registration).await.unwrap();
 
@@ -860,5 +878,159 @@ async fn rust_clippy_old_runner_is_fenced_at_planning_and_job_admission() {
             .await
             .unwrap()
             .is_none());
+    }
+}
+
+#[tokio::test]
+async fn rust_clippy_activity_preserves_terminal_result_and_rejects_wrong_phase_or_source() {
+    use webcodex_core::runner_protocol::{
+        ShellJobActivity, ShellJobActivityPhase, ShellJobActivitySource, ShellJobActivityState,
+        ShellJobValidationProgress,
+    };
+    for (phase, source, exit_code, valid) in [
+        (
+            ShellJobActivityPhase::ValidationCheck,
+            ShellJobActivitySource::ValidationPlan,
+            0,
+            true,
+        ),
+        (
+            ShellJobActivityPhase::ValidationCheck,
+            ShellJobActivitySource::ValidationPlan,
+            101,
+            true,
+        ),
+        (
+            ShellJobActivityPhase::ValidationTest,
+            ShellJobActivitySource::ValidationPlan,
+            0,
+            false,
+        ),
+        (
+            ShellJobActivityPhase::ProcessRunning,
+            ShellJobActivitySource::RunnerExecution,
+            0,
+            false,
+        ),
+    ] {
+        let registry = RunnerRegistry::default();
+        let mut runner = registration(true);
+        runner.capabilities.project_validation_rust_clippy_v1 = true;
+        registry.register(runner).await.unwrap();
+        let mut metadata = locked_validation_metadata();
+        let request = &mut metadata.project_validation.as_mut().unwrap().request;
+        request.action = ProjectValidationAction::Lint;
+        request.dependency_policy = None;
+        metadata.adapter = "cargo_clippy".into();
+        metadata.kind = "lint".into();
+        metadata.steps[0].name = "lint".into();
+        metadata.steps[0].args = ["clippy", "--all-targets", "--", "-D", "clippy::correctness"]
+            .map(str::to_string)
+            .to_vec();
+        assert!(metadata.is_valid());
+        let job = registry
+            .start_job(
+                job_start_request(
+                    JobStartExecution::Validation {
+                        plan: JobValidationPlan::Metadata(metadata),
+                        ssh_resource: None,
+                    },
+                    "validation",
+                ),
+                "test".into(),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let mut update = RunnerJobUpdateRequest {
+            client_id: "policy-runner".into(),
+            runner_instance_id: "inst".into(),
+            job_id: job.job_id.clone(),
+            request_id: None,
+            update_seq: Some(1),
+            status: "running".into(),
+            stdout_chunk: None,
+            stderr_chunk: None,
+            log_snapshot: None,
+            exit_code: None,
+            duration_ms: None,
+            error: None,
+            command_execution_state: None,
+            validation_progress: Some(ShellJobValidationProgress {
+                completed: 0,
+                current_step: Some("lint".into()),
+                failed_step: None,
+            }),
+            test_count_evidence: None,
+            format_mutation: None,
+            build_artifacts: None,
+            activity: Some(ShellJobActivity {
+                state: ShellJobActivityState::Working,
+                phase,
+                source,
+            }),
+            finished: false,
+        };
+        let running = registry.update_job(update.clone()).await.unwrap();
+        if !valid {
+            assert_eq!(running.status, "failed");
+            assert!(running
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("job_activity_invalid")));
+            assert_eq!(running.activity, None);
+            continue;
+        }
+        assert_eq!(running.status, "running", "{running:?}");
+        assert_eq!(running.activity, update.activity);
+        assert!(running.error.is_none());
+        update.update_seq = Some(2);
+        update.status = if exit_code == 0 {
+            "completed"
+        } else {
+            "failed"
+        }
+        .into();
+        update.exit_code = Some(exit_code);
+        update.duration_ms = Some(4);
+        update.stderr_chunk = Some(
+            if exit_code == 0 {
+                "warning: fixture warning\n"
+            } else {
+                "error: fixture correctness failure\n"
+            }
+            .into(),
+        );
+        update.validation_progress = Some(ShellJobValidationProgress {
+            completed: usize::from(exit_code == 0),
+            current_step: None,
+            failed_step: (exit_code != 0).then(|| "lint".into()),
+        });
+        update.activity = None;
+        update.finished = true;
+        let terminal = registry.update_job(update).await.unwrap();
+        assert_eq!(
+            terminal.status,
+            if exit_code == 0 {
+                "completed"
+            } else {
+                "failed"
+            }
+        );
+        assert_eq!(terminal.exit_code, Some(exit_code));
+        assert_eq!(terminal.duration_ms, Some(4));
+        assert!(terminal.error.is_none(), "{terminal:?}");
+        assert_eq!(terminal.activity, None);
+        let (retained, _, stderr, _, _) = registry
+            .job_log(&job.job_id, None, None, Some(10))
+            .await
+            .unwrap();
+        assert_eq!(retained.exit_code, Some(exit_code));
+        assert!(stderr.as_deref().unwrap().contains(if exit_code == 0 {
+            "fixture warning"
+        } else {
+            "fixture correctness failure"
+        }));
     }
 }

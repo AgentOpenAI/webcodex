@@ -3941,6 +3941,71 @@ async fn project_validation_ruff_admission_requires_ruff_capability_even_with_py
 }
 
 #[tokio::test]
+async fn project_validation_workspace_exclusion_capability_rechecked_at_admission() {
+    use webcodex_core::project_validation::*;
+    for supported in [false, true] {
+        let registry = RunnerRegistry::default();
+        let mut registration = register_request(INSTANCE_A, empty_inventory());
+        registration.capabilities.project_validation_v1 = true;
+        registration.capabilities.project_all_packages_v1 = true;
+        registration.capabilities.project_workspace_exclusions_v1 = supported;
+        registry.register(registration).await.unwrap();
+
+        let mut metadata = cargo_validation_metadata(None, None, None);
+        metadata.tool = "project_validate".into();
+        metadata.kind = "check".into();
+        metadata.adapter = "cargo_check".into();
+        metadata.steps = vec![ShellJobValidationStep {
+            name: "check".into(),
+            program: "cargo".into(),
+            args: ["check", "--all-targets", "--workspace", "--exclude", "alpha"]
+                .map(str::to_string)
+                .to_vec(),
+            env: vec![],
+        }];
+        metadata.project_validation = Some(ProjectValidationProvenance {
+            request: ProjectValidationRequest {
+                project_id: "demo".into(),
+                cwd: None,
+                action: ProjectValidationAction::Check,
+                adapter: ProjectValidationAdapter::Rust,
+                scope: Some(ProjectValidationScope {
+                    packages: vec![],
+                    all_packages: true,
+                    exclude_packages: vec!["alpha".into()],
+                }),
+                dependency_policy: None,
+                dependency_resolution_policy: None,
+                test: None,
+            },
+            backend: "rust".into(),
+            recipe_root: ".".into(),
+            root_digest: "a".repeat(64),
+            manifest_digest: "b".repeat(64),
+            invocation_digest: "c".repeat(64),
+        });
+        assert!(metadata.is_valid());
+
+        let result = registry
+            .start_job(
+                validation_start_request(metadata, "test"),
+                "tester".into(),
+                None,
+                None,
+            )
+            .await;
+        if supported {
+            assert!(result.is_ok(), "{result:?}");
+        } else {
+            let error = result.unwrap_err();
+            assert!(error.to_string().starts_with("capability_unavailable:"), "{error}");
+            assert!(error.to_string().contains("project_workspace_exclusions_v1"), "{error}");
+            assert!(registry.list_jobs(Some(10)).await.is_empty());
+        }
+    }
+}
+
+#[tokio::test]
 async fn project_validation_node_native_capability_rechecked_at_job_admission() {
     use webcodex_core::project_validation::*;
     for supported in [false, true] {

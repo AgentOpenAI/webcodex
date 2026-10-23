@@ -178,6 +178,7 @@ fn project_build_package_scope_maps_to_bounded_backend_argv() {
     rust.scope = Some(ProjectBuildScope {
         packages: vec!["package-b".into(), "package-a".into(), "package-a".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     let (plan, _) = project_build::plan(&policy, &registry, &rust).unwrap();
     assert_eq!(
@@ -190,6 +191,7 @@ fn project_build_package_scope_maps_to_bounded_backend_argv() {
     go.scope = Some(ProjectBuildScope {
         packages: vec!["./cmd/...".into(), "./internal".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     let (plan, _) = project_build::plan(&policy, &registry, &go).unwrap();
     assert_eq!(plan.process.args, ["build", "./cmd/...", "./internal"]);
@@ -198,6 +200,7 @@ fn project_build_package_scope_maps_to_bounded_backend_argv() {
     invalid.scope = Some(ProjectBuildScope {
         packages: vec!["not-relative".into()],
         all_packages: false,
+        exclude_packages: Vec::new(),
     });
     assert!(matches!(
         project_build::plan(&policy, &registry, &invalid),
@@ -262,13 +265,19 @@ fn project_build_all_packages_member_manifest_change_fails_queue_fence() {
     let (_tmp, root, registry, policy) = fixture("Cargo.toml");
     fs::write(
         root.join("Cargo.toml"),
-        "[workspace]\nmembers = [\"member\"]\nresolver = \"2\"\n",
+        "[workspace]\nmembers = [\"member\", \"other\"]\nresolver = \"2\"\n",
     )
     .unwrap();
     fs::create_dir_all(root.join("member/src")).unwrap();
     fs::write(
         root.join("member/Cargo.toml"),
         "[package]\nname = \"member\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(root.join("other/src")).unwrap();
+    fs::write(
+        root.join("other/Cargo.toml"),
+        "[package]\nname = \"other\"\nversion = \"0.1.0\"\n",
     )
     .unwrap();
 
@@ -278,10 +287,14 @@ fn project_build_all_packages_member_manifest_change_fails_queue_fence() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: vec!["member".into()],
     });
 
     let (plan, cwd) = project_build::plan(&policy, &registry, &req).unwrap();
-    assert_eq!(plan.process.args, ["build", "--workspace"]);
+    assert_eq!(
+        plan.process.args,
+        ["build", "--workspace", "--exclude", "member"]
+    );
     let operation = start_build_operation(&plan, &cwd);
     project_build::fence(&policy, &registry, &operation).unwrap();
 
@@ -293,6 +306,40 @@ fn project_build_all_packages_member_manifest_change_fails_queue_fence() {
     assert!(project_build::fence(&policy, &registry, &operation)
         .unwrap_err()
         .contains("build_plan_stale"));
+}
+
+#[test]
+fn project_build_workspace_exclusions_reject_unknown_or_all_members_before_plan() {
+    let (_tmp, root, registry, policy) = fixture("Cargo.toml");
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"a\", \"b\"]\nresolver = \"2\"\n",
+    )
+    .unwrap();
+    for (path, name) in [("a", "alpha"), ("b", "beta")] {
+        fs::create_dir_all(root.join(path).join("src")).unwrap();
+        fs::write(
+            root.join(path).join("Cargo.toml"),
+            format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\n"),
+        )
+        .unwrap();
+    }
+    for excluded in [
+        vec!["missing".to_string()],
+        vec!["alpha".into(), "beta".into()],
+    ] {
+        let mut request = request();
+        request.scope = Some(ProjectBuildScope {
+            packages: Vec::new(),
+            all_packages: true,
+            exclude_packages: excluded,
+        });
+        let error = project_build::plan(&policy, &registry, &request).unwrap_err();
+        assert!(
+            format!("{error:?}").contains("build_scope_invalid"),
+            "{error:?}"
+        );
+    }
 }
 
 #[test]
@@ -344,6 +391,7 @@ fn project_build_all_packages_target_member_change_fails_queue_fence() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project_build::plan(&policy, &registry, &req).unwrap();
     assert_eq!(plan.process.args, ["build", "--workspace"]);
@@ -386,6 +434,7 @@ fn project_build_all_packages_member_symlink_retarget_fails_queue_fence() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project_build::plan(&policy, &registry, &req).unwrap();
     let operation = start_build_operation(&plan, &cwd);
@@ -412,6 +461,7 @@ fn project_build_all_packages_supports_single_rust_package() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
 
     let (plan, _) = project_build::plan(&policy, &registry, &req).unwrap();
@@ -441,6 +491,7 @@ fn project_build_all_packages_recursive_glob_cycle_fails_queue_fence() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project_build::plan(&policy, &registry, &req).unwrap();
     let operation = start_build_operation(&plan, &cwd);
@@ -467,6 +518,7 @@ fn project_build_all_packages_parent_workspace_appearance_fails_queue_fence() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     let (plan, cwd) = project_build::plan(&policy, &registry, &req).unwrap();
     let operation = start_build_operation(&plan, &cwd);
@@ -506,6 +558,7 @@ fn project_build_all_packages_rejects_excluded_recipe_cwd() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     assert!(
         matches!(project_build::plan(&policy, &registry, &req), Err(ProjectBuildPlanningResult::Unavailable { code, .. }) if code == "build_scope_unavailable")
@@ -548,6 +601,7 @@ fn python_packaging_plans_manifest_and_backend_input_fences() {
     req.scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     assert!(
         matches!(project_build::plan(&policy,&registry,&req),Err(ProjectBuildPlanningResult::Unavailable { code,.. }) if code == "build_scope_invalid")
@@ -754,6 +808,7 @@ fn node_build_manifest_script_manager_scope_and_stale_fence() {
     req.scope = Some(ProjectBuildScope {
         packages: vec![],
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
     assert!(
         matches!(project_build::plan(&policy, &registry, &req), Err(ProjectBuildPlanningResult::Unavailable { code, .. }) if code == "build_scope_unsupported")

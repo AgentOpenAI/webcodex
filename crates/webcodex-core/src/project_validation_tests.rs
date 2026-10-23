@@ -97,6 +97,41 @@ fn project_node_check_step_identity_capability_and_metadata_are_closed() {
 }
 
 #[test]
+fn only_canonical_project_cargo_steps_accept_sorted_workspace_exclusions() {
+    use crate::runner_protocol::ShellJobValidationStep;
+    let step = |args: &[&str]| ShellJobValidationStep {
+        name: "check".into(),
+        program: "cargo".into(),
+        args: args.iter().map(|arg| (*arg).into()).collect(),
+        env: vec![],
+    };
+    let excluded = step(&[
+        "check",
+        "--workspace",
+        "--exclude",
+        "alpha",
+        "--exclude",
+        "zeta",
+    ]);
+    assert!(!excluded.is_canonical());
+    assert!(excluded.is_canonical_project_step());
+    assert!(
+        step(&[
+            "check",
+            "--workspace",
+            "--exclude",
+            "zeta",
+            "--exclude",
+            "alpha"
+        ])
+        .is_canonical_project_step()
+            == false
+    );
+    assert!(!step(&["check", "--exclude", "alpha"]).is_canonical_project_step());
+    assert!(!step(&["check", "--workspace", "--exclude", "../alpha"]).is_canonical_project_step());
+}
+
+#[test]
 fn explicit_lint_provenance_has_closed_backend_set() {
     let mut provenance = ProjectValidationProvenance {
         request: ProjectValidationRequest {
@@ -330,6 +365,7 @@ fn project_validation_package_scope_roundtrips_and_is_bounded() {
         scope: Some(ProjectValidationScope {
             packages: vec!["package-a".into(), "package-b".into()],
             all_packages: false,
+            exclude_packages: Vec::new(),
         }),
         dependency_policy: None,
         dependency_resolution_policy: None,
@@ -350,6 +386,7 @@ fn project_validation_package_scope_roundtrips_and_is_bounded() {
         invalid.scope = Some(ProjectValidationScope {
             packages,
             all_packages: false,
+            exclude_packages: Vec::new(),
         });
         assert!(invalid.validate().is_err());
     }

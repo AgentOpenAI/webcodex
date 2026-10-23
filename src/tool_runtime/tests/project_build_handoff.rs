@@ -13,6 +13,10 @@ use webcodex_core::project_build::{
 const CLIENT: &str = "project-build";
 
 async fn setup(grace_ms: u64) -> ToolRuntime {
+    setup_with_workspace_exclusions(grace_ms, false).await
+}
+
+async fn setup_with_workspace_exclusions(grace_ms: u64, workspace_exclusions: bool) -> ToolRuntime {
     let runtime = runtime_with_agent_project(CLIENT)
         .with_structured_execution_sync_wait(std::time::Duration::from_millis(grace_ms));
     register_agent(
@@ -22,6 +26,8 @@ async fn setup(grace_ms: u64) -> ToolRuntime {
         RunnerCapabilities {
             project_build_v1: true,
             project_build_python_v1: true,
+            project_all_packages_v1: true,
+            project_workspace_exclusions_v1: workspace_exclusions,
             ..Default::default()
         },
     )
@@ -208,6 +214,95 @@ async fn project_build_pending_projection_returns_the_same_durable_job() {
 }
 
 #[tokio::test]
+async fn project_build_workspace_exclusion_requires_additive_runner_capability() {
+    let runtime = runtime_with_agent_project(CLIENT);
+    register_agent(
+        &runtime,
+        CLIENT,
+        None,
+        RunnerCapabilities {
+            project_build_v1: true,
+            project_all_packages_v1: true,
+            project_workspace_exclusions_v1: false,
+            ..Default::default()
+        },
+    )
+    .await;
+    let mut scoped = call();
+    let ToolCall::ProjectBuild { scope, .. } = &mut scoped else {
+        unreachable!()
+    };
+    *scope = Some(ProjectBuildScope {
+        packages: Vec::new(),
+        all_packages: true,
+        exclude_packages: vec!["package-b".into()],
+    });
+
+    let result = runtime
+        .dispatch_with_auth(scoped, Some(&auth_context(None, true)))
+        .await;
+    assert!(!result.success);
+    assert!(result
+        .error
+        .unwrap()
+        .contains("project_workspace_exclusions_v1"));
+    assert!(runtime.runner_registry.list_jobs(Some(10)).await.is_empty());
+    assert!(probe_patch_agent_request(&runtime, CLIENT).await.is_none());
+}
+
+#[tokio::test]
+async fn project_build_workspace_exclusion_handoff_keeps_same_job() {
+    let runtime = setup_with_workspace_exclusions(1, true).await;
+    let task = tokio::spawn({
+        let runtime = runtime.clone();
+        async move {
+            let mut input = call();
+            if let ToolCall::ProjectBuild { scope, .. } = &mut input {
+                *scope = Some(ProjectBuildScope {
+                    packages: Vec::new(),
+                    all_packages: true,
+                    exclude_packages: vec!["package-b".into()],
+                });
+            }
+            runtime
+                .dispatch_with_auth(input, Some(&auth_context(None, true)))
+                .await
+        }
+    });
+    let (request, job_id) = reply_plan(&runtime).await;
+    let operation = request.decode_operation().unwrap();
+    let webcodex_core::runner_operation::RunnerOperation::Job(
+        webcodex_core::runner_operation::RunnerJobOperation::StartBuild(build),
+    ) = operation
+    else {
+        panic!("expected typed StartBuild");
+    };
+    assert_eq!(
+        build.process.args,
+        ["build", "--workspace", "--exclude", "package-b"]
+    );
+    let pending = task.await.unwrap();
+    assert_eq!(
+        pending.output["continuation"]["arguments"]["items"][0]["job_id"],
+        job_id
+    );
+    finish_build_job(
+        &runtime,
+        &request,
+        &job_id,
+        "completed",
+        ShellCommandExecutionState::Completed,
+        Some(0),
+        None,
+    )
+    .await;
+    assert_eq!(
+        runtime.runner_registry.get_job(&job_id).await.unwrap().kind,
+        "project_build"
+    );
+}
+
+#[tokio::test]
 async fn rust_project_build_offline_policy_is_fenced_before_runner_plan() {
     let runtime = runtime_with_agent_project(CLIENT);
     register_agent(
@@ -265,6 +360,7 @@ async fn project_build_all_packages_requires_additive_runner_capability() {
         RunnerCapabilities {
             project_build_v1: true,
             project_all_packages_v1: false,
+            project_workspace_exclusions_v1: false,
             ..Default::default()
         },
     )
@@ -277,6 +373,7 @@ async fn project_build_all_packages_requires_additive_runner_capability() {
     *scope = Some(ProjectBuildScope {
         packages: Vec::new(),
         all_packages: true,
+        exclude_packages: Vec::new(),
     });
 
     let result = runtime

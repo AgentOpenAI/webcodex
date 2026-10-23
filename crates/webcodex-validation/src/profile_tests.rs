@@ -84,6 +84,7 @@ fn semantic_read_only_operations_preserve_legacy_leaf_plans_and_identity_profile
                     package: None,
                     packages: Some(vec!["package-a".to_string(), "package-b".to_string()]),
                     all_packages: false,
+                    exclude_packages: Vec::new(),
                     dependency_mode: None,
                     dependency_resolution_policy: None,
                 },
@@ -110,6 +111,7 @@ fn semantic_read_only_operations_preserve_legacy_leaf_plans_and_identity_profile
                     package: Some("webcodex".to_string()),
                     packages: None,
                     all_packages: false,
+                    exclude_packages: Vec::new(),
                     no_run: Some(true),
                     dependency_mode: None,
                     dependency_resolution_policy: None,
@@ -302,6 +304,73 @@ fn project_validation_operations_preserve_default_identities_and_scope_commands(
             ..Default::default()
         }));
     assert!(direct_go_conflict.build_readonly_plan().is_err());
+}
+
+#[test]
+fn project_validation_workspace_exclusions_are_rust_all_packages_only() {
+    use crate::project_validation_operation_with_excluded_packages;
+
+    for (action, expected) in [
+        (
+            SemanticCheck::Check,
+            vec![
+                "check",
+                "--all-targets",
+                "--workspace",
+                "--exclude",
+                "alpha",
+            ],
+        ),
+        (
+            SemanticCheck::Lint,
+            vec![
+                "clippy",
+                "--all-targets",
+                "--workspace",
+                "--exclude",
+                "alpha",
+                "--",
+                "-D",
+                "clippy::correctness",
+            ],
+        ),
+        (
+            SemanticCheck::Test,
+            vec!["test", "--workspace", "--exclude", "alpha"],
+        ),
+    ] {
+        let operation = project_validation_operation_with_excluded_packages(
+            "rust",
+            action,
+            None,
+            true,
+            vec!["alpha".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            operation
+                .build_readonly_plan()
+                .unwrap()
+                .structured_step
+                .args,
+            expected
+        );
+    }
+    for (backend, action) in [
+        ("go", SemanticCheck::Check),
+        ("python", SemanticCheck::Test),
+        ("node", SemanticCheck::Check),
+        ("rust", SemanticCheck::Format),
+    ] {
+        assert!(project_validation_operation_with_excluded_packages(
+            backend,
+            action,
+            None,
+            true,
+            vec!["alpha".into()],
+        )
+        .is_err());
+    }
 }
 
 #[test]

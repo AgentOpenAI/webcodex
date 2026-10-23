@@ -191,6 +191,7 @@ async fn runner_supports_reflects_registered_capabilities() {
         project_validation_v1: true,
         project_validation_package_scope_v1: true,
         project_all_packages_v1: true,
+        project_workspace_exclusions_v1: false,
         structured_go_test_tool: true,
         structured_go_test_packages: true,
         structured_cargo_test_lib: true,

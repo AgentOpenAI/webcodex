@@ -2990,6 +2990,7 @@ mod tests {
                     scope: Some(ProjectValidationScope {
                         packages: Vec::new(),
                         all_packages: true,
+                        exclude_packages: Vec::new(),
                     }),
                     dependency_policy: None,
                     dependency_resolution_policy: None,

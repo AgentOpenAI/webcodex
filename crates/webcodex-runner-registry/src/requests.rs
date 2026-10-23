@@ -2714,6 +2714,10 @@ impl RunnerRegistry {
             .scope
             .as_ref()
             .is_some_and(webcodex_core::project_build::ProjectBuildScope::selects_all_packages);
+        let requires_workspace_exclusions = payload
+            .scope
+            .as_ref()
+            .is_some_and(|scope| !scope.exclude_packages.is_empty());
         let requires_dependency_policy = payload.dependency_policy.is_some();
         let requires_resolution_offline = payload.dependency_resolution_policy.is_some();
         let requires_python =
@@ -2738,6 +2742,7 @@ impl RunnerRegistry {
                 requires_node.then_some(RunnerFeature::ProjectBuildNode),
                 requires_python.then_some(RunnerFeature::ProjectBuildPython),
                 requires_all_packages.then_some(RunnerFeature::ProjectAllPackages),
+                requires_workspace_exclusions.then_some(RunnerFeature::ProjectWorkspaceExclusions),
                 requires_dependency_policy.then_some(RunnerFeature::ProjectDependencyPolicy),
                 requires_resolution_offline
                     .then_some(RunnerFeature::ProjectDependencyResolutionOffline),
@@ -2852,6 +2857,10 @@ impl RunnerRegistry {
         let requires_all_packages = payload.scope.as_ref().is_some_and(
             webcodex_core::project_validation::ProjectValidationScope::selects_all_packages,
         );
+        let requires_workspace_exclusions = payload
+            .scope
+            .as_ref()
+            .is_some_and(|scope| !scope.exclude_packages.is_empty());
         let requires_dependency_policy = payload.dependency_policy.is_some();
         let requires_resolution_offline = payload.dependency_resolution_policy.is_some();
         let requires_test_options = payload.test.is_some();
@@ -2876,6 +2885,7 @@ impl RunnerRegistry {
                 python_capability,
                 node_capability,
                 requires_all_packages.then_some(RunnerFeature::ProjectAllPackages),
+                requires_workspace_exclusions.then_some(RunnerFeature::ProjectWorkspaceExclusions),
                 requires_dependency_policy.then_some(RunnerFeature::ProjectDependencyPolicy),
                 requires_resolution_offline
                     .then_some(RunnerFeature::ProjectDependencyResolutionOffline),

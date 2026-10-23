@@ -22,13 +22,13 @@ mod recipe_tests;
 
 pub use adapters::{
     execution_purpose_for_validation_kind, project_validation_operation,
-    validation_adapter_for_recipe, validation_adapter_for_tool,
-    validation_evidence_profile_for_project_step, validation_evidence_profile_for_recipe,
-    validation_evidence_profile_for_tool, CargoCheckOptions, CargoReadOnlyValidationOperation,
-    CargoTestOptions, GoCheckOptions, GoReadOnlyValidationOperation, GoTestOptions,
-    PythonTestOptions, ReadOnlyValidationOperation, ReadOnlyValidationPlan, ValidationAdapter,
-    ValidationCommandOptions, ValidationCompatibilityProfile, ValidationEvidenceProfile,
-    ValidationFailureEvidence,
+    project_validation_operation_with_excluded_packages, validation_adapter_for_recipe,
+    validation_adapter_for_tool, validation_evidence_profile_for_project_step,
+    validation_evidence_profile_for_recipe, validation_evidence_profile_for_tool,
+    CargoCheckOptions, CargoReadOnlyValidationOperation, CargoTestOptions, GoCheckOptions,
+    GoReadOnlyValidationOperation, GoTestOptions, PythonTestOptions, ReadOnlyValidationOperation,
+    ReadOnlyValidationPlan, ValidationAdapter, ValidationCommandOptions,
+    ValidationCompatibilityProfile, ValidationEvidenceProfile, ValidationFailureEvidence,
 };
 #[cfg(any(feature = "session-evidence", test))]
 pub use evidence::{
@@ -42,9 +42,9 @@ pub use recipe::{
     detect_validation_recipe, resolve_node_native_project_check, resolve_node_native_project_lint,
     resolve_node_native_project_test, resolve_node_project_build,
     resolve_project_validation_recipe, resolve_project_validation_recipe_with_resolution_policy,
-    resolve_validation_recipe, resolve_validation_recipe_with_packages,
-    resolve_validation_recipe_with_project_policy, validate_node_project_markers, RecipeError,
-    RecipeId, ResolvedValidationRecipe, SemanticCheck,
+    resolve_project_validation_recipe_with_scope_exclusions, resolve_validation_recipe,
+    resolve_validation_recipe_with_packages, resolve_validation_recipe_with_project_policy,
+    validate_node_project_markers, RecipeError, RecipeId, ResolvedValidationRecipe, SemanticCheck,
 };
 pub use webcodex_core::cargo_test_count::{
     parse_cargo_test_run_metadata, CargoTestRunMetadata, CargoTestRunMetadataAccumulator,

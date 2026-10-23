@@ -12,9 +12,8 @@ use webcodex_core::project_build::{
 };
 use webcodex_core::runner_operation::RunnerJobOperation;
 use webcodex_workspace::project_recipe::{
-    digest_project_cargo_all_packages_provenance, digest_project_recipe_files,
-    project_recipe_provenance_files, resolve_project_recipe_root, ProjectRecipeId,
-    ProjectRecipeResolutionError,
+    digest_project_recipe_files, project_recipe_provenance_files, resolve_project_recipe_root,
+    ProjectRecipeId, ProjectRecipeResolutionError,
 };
 
 fn unavailable(code: &str, backend: Option<&str>) -> ProjectBuildPlanningResult {
@@ -89,6 +88,19 @@ pub(crate) fn plan(
             Some(backend.as_str()),
         ));
     }
+    let excluded_packages = request
+        .scope
+        .as_ref()
+        .map(webcodex_core::project_build::ProjectBuildScope::normalized_exclude_packages)
+        .transpose()
+        .map_err(|_| unavailable("build_scope_invalid", None))?
+        .unwrap_or_default();
+    if !excluded_packages.is_empty() && backend != ProjectRecipeId::Rust {
+        return Err(unavailable(
+            "workspace_exclusions_unsupported",
+            Some(backend.as_str()),
+        ));
+    }
 
     if backend == ProjectRecipeId::Python {
         // Default `build` output is dist/. Never follow a pre-existing redirected
@@ -125,8 +137,25 @@ pub(crate) fn plan(
             .as_ref()
             .is_some_and(webcodex_core::project_build::ProjectBuildScope::selects_all_packages)
     {
-        digest_project_cargo_all_packages_provenance(&resolved)
+        if !excluded_packages.is_empty() {
+            let (digest, members) =
+                webcodex_workspace::project_recipe::project_cargo_all_packages_provenance(
+                    &resolved,
+                )
+                .map_err(|_| unavailable("build_scope_unavailable", Some(backend.as_str())))?;
+            request
+                .scope
+                .as_ref()
+                .expect("exclusions require scope")
+                .validate_excluded_members(&members)
+                .map_err(|_| unavailable("build_scope_invalid", Some(backend.as_str())))?;
+            digest
+        } else {
+            webcodex_workspace::project_recipe::digest_project_cargo_all_packages_provenance(
+                &resolved,
+            )
             .map_err(|_| unavailable("build_scope_unavailable", Some(backend.as_str())))?
+        }
     } else {
         let provenance_files = if backend == ProjectRecipeId::Python {
             // Packaging requires a manifest even for explicit Python. These
