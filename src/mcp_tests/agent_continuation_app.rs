@@ -722,6 +722,120 @@ async fn agent_continuation_app_surface_is_sparse_app_only_without_rendering_bin
 }
 
 #[tokio::test]
+async fn stateless_chatgpt_rotation_reserves_first_mount_window_without_binding() {
+    let (_temp, db, runtime) = continuation_runtime();
+    let owner = continuation_auth("first-mount-route-owner");
+    let agent = create_agent(
+        &runtime,
+        &owner,
+        "first-mount-route-agent",
+        "First Mount Route Agent",
+        "first-mount-route-create",
+    );
+    let original_session = "chatgpt-first-mount-origin";
+    let rotate = handle_with_app_policy(
+        &runtime,
+        rpc(
+            "tools/call",
+            Some(json!(5310)),
+            mcp_2026_window_params(
+                adaptive_runtime_gateway_params(
+                    "rotate_agent_continuation_endpoint",
+                    json!({
+                        "agent_id": agent,
+                        "host": "ChatGPT",
+                        "client_attachment_id": "first-mount-route-view",
+                        "idempotency_key": "first-mount-route-attach"
+                    }),
+                ),
+                original_session,
+            ),
+        ),
+        Some(&owner),
+        true,
+    )
+    .await;
+    let McpOutcome::Ok(rotate) = rotate else {
+        panic!("the real MCP route did not accept exact authorized rotation");
+    };
+    assert_eq!(rotate["result"]["structuredContent"]["success"], true);
+    let initial = &rotate["result"]["structuredContent"]["output"]["endpoint"];
+    let endpoint = initial["endpoint_id"].as_str().unwrap().to_string();
+    let generation = initial["controller_generation"].as_i64().unwrap();
+    assert_eq!(initial["wake_capable"], false);
+    let expected =
+        crate::client_window::ClientWindow::from_opaque("openai-session", original_session)
+            .unwrap();
+    let persisted = endpoint_client_window_key(&db, &endpoint);
+    assert_eq!(persisted.as_deref(), Some(expected.key()));
+    assert_ne!(persisted.as_deref(), Some(original_session));
+
+    db.conn_for_tests()
+        .execute(
+            "UPDATE wc_agent_endpoints SET lease_expires_at_unix_ms = 0
+         WHERE endpoint_id = ?1",
+            [&endpoint],
+        )
+        .unwrap();
+    let recovery_args = json!({
+        "name": "recover_agent_continuation_endpoint",
+        "arguments": {
+            "agent_id": agent,
+            "endpoint_id": endpoint,
+            "expected_controller_generation": generation,
+            "binding_id": "wc_host_binding_EREREREREREREREREREREQ"
+        },
+    });
+    let foreign_window = handle_with_app_policy(
+        &runtime,
+        rpc(
+            "tools/call",
+            Some(json!(5311)),
+            mcp_2026_window_params(recovery_args.clone(), "different-window"),
+        ),
+        Some(&owner),
+        true,
+    )
+    .await;
+    let McpOutcome::Ok(foreign_window) = foreign_window else {
+        panic!("wrong-window recovery should report a bounded tool error");
+    };
+    assert_eq!(
+        foreign_window["result"]["structuredContent"]["success"],
+        false
+    );
+    assert_eq!(
+        foreign_window["result"]["structuredContent"]["output"]["error_kind"],
+        "host_binding_stale",
+    );
+    let original_window = handle_with_app_policy(
+        &runtime,
+        rpc(
+            "tools/call",
+            Some(json!(5312)),
+            mcp_2026_window_params(recovery_args, original_session),
+        ),
+        Some(&owner),
+        true,
+    )
+    .await;
+    let McpOutcome::Ok(original_window) = original_window else {
+        panic!("same-Window first-mount recovery should be authorized");
+    };
+    let result = &original_window["result"]["structuredContent"];
+    assert_eq!(result["success"], true);
+    assert_eq!(
+        result["output"]["endpoint_recovery"]["kind"],
+        "endpoint_replaced"
+    );
+    assert_eq!(
+        result["output"]["agent_continuation"]["host_binding"]["bound"],
+        false
+    );
+    assert_eq!(result["output"]["state_changed"], true);
+}
+
+#[tokio::test]
 async fn agent_continuation_app_uses_hashed_openai_session_as_client_window_fence() {
     let (_temp, db, runtime) = continuation_runtime();
     let owner = continuation_auth("continuation-window-owner");
