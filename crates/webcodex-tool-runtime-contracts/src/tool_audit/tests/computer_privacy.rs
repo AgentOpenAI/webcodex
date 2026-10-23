@@ -2,6 +2,18 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn computer_post_observation_result_does_not_persist_tree_or_provider_error() {
+    let output = json!({"platform":"windows","surface_id":"surface_safe","element_id":"element_safe",
+        "action":"press","success":true,"post_observation":{"success":false,
+        "output":{"nodes":[{"value":"PRIVATE_TREE_VALUE"}]},"error":"PRIVATE_PROVIDER_ERROR"}});
+    let summary = session_log_result_for_tool("control_computer", &output);
+    assert_eq!(summary["success"], true);
+    let serialized = serde_json::to_string(&summary).unwrap();
+    assert!(!serialized.contains("PRIVATE_TREE_VALUE"));
+    assert!(!serialized.contains("PRIVATE_PROVIDER_ERROR"));
+}
+
+#[test]
 fn request_audit_fails_closed_and_never_mutates_business_arguments() {
     // Structured validation lifecycle controls are audit metadata, not
     // validation identity inputs. Keep the explicit synchronous grace in
@@ -1648,6 +1660,7 @@ fn computer_text_input_request_and_result_never_persist_text() {
     assert!(request_summary.get("text").is_none());
 
     let typed = ToolCall::ComputerControl(ComputerControlToolCall::InputText {
+        observe_after: None,
         client_id: "mini".to_string(),
         surface_id: "surface_safe".to_string(),
         element_id: "element_safe".to_string(),

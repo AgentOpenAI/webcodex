@@ -168,6 +168,7 @@ async fn computer_fixture_response(
     .await;
     let call = if effect {
         ToolCall::ComputerControl(ComputerControlToolCall::Press {
+            observe_after: None,
             client_id: client_id.to_string(),
             surface_id: "surface_test".to_string(),
             element_id: "element_test".to_string(),

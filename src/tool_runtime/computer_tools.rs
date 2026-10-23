@@ -53,6 +53,7 @@ mod gateway;
 mod input_receipts;
 mod inputs;
 mod observe;
+mod post_observation;
 mod request;
 mod responses;
 mod screens;

@@ -1379,6 +1379,10 @@ pub enum ComputerControlToolCall {
         surface_id: String,
         #[schemars(length(min = 1, max = 128))]
         element_id: String,
+        /// Optional bounded fresh tree of this same window after a confirmed
+        /// successful action. Requires independent Computer read authority.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        observe_after: Option<ComputerPostObservation>,
     },
     Focus {
         #[schemars(length(min = 1, max = 128))]
@@ -1421,6 +1425,8 @@ pub enum ComputerControlToolCall {
         element_id: String,
         #[schemars(length(min = 1, max = 2048))]
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        observe_after: Option<ComputerPostObservation>,
     },
     PointerMove {
         #[schemars(length(min = 1, max = 128))]
@@ -1457,6 +1463,13 @@ pub enum ComputerControlToolCall {
 }
 
 impl ComputerControlToolCall {
+    pub fn observe_after(&self) -> Option<&ComputerPostObservation> {
+        match self {
+            Self::Press { observe_after, .. } | Self::InputText { observe_after, .. } => observe_after.as_ref(),
+            _ => None,
+        }
+    }
+
     pub const fn action_name(&self) -> &'static str {
         match self {
             Self::LaunchApplication { .. } => "launch_application",
@@ -1471,6 +1484,19 @@ impl ComputerControlToolCall {
             Self::WriteClipboard { .. } => "write_clipboard",
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ComputerPostObservation {
+    AccessibilityTree {
+        /// Relative tree depth; existing accessibility bounds apply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_depth: Option<usize>,
+        /// Maximum nodes; existing accessibility bounds apply.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_nodes: Option<usize>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]

@@ -281,6 +281,7 @@ mod computer_accessibility;
 mod computer_control;
 #[path = "tests/computer_observe.rs"]
 mod computer_observe;
+mod computer_post_observation;
 #[path = "tests/computer_snapshot_artifact.rs"]
 mod computer_snapshot_artifact;
 #[path = "tests/computer_text_input.rs"]

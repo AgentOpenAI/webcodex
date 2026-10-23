@@ -25,6 +25,7 @@ mod coding_task_semantic_navigation;
 mod collaboration;
 mod computer_budgets;
 mod computer_lifecycle;
+mod computer_post_observation;
 mod context_projection;
 mod continuation_feedback;
 mod control_sidecars;

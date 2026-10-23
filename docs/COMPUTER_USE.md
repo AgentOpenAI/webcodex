@@ -2,6 +2,32 @@
 
 This page tracks the implementation order for WebCodex Computer Use. It is a roadmap, not a duplicate semantic or authorization specification. Current authority, scope, retry, and privacy contracts remain defined by [Authentication](AUTH_MODEL.md#computer-observation-and-control-authorization), the model-facing tool definitions, and the Runner implementation.
 
+## Action followed by a bounded observation
+
+`control_computer(action=press|input_text)` optionally accepts
+`observe_after={"action":"accessibility_tree","max_depth":3,"max_nodes":32}`.
+This requests one action and then one fresh bounded tree of the exact same
+window. Both Computer control and read scopes, action capability and accessibility
+observation capability must be available before acting. Omit `observe_after` for
+the existing action-only behavior. No other control actions admit this field.
+
+The ordinary action result remains authoritative. After confirmed success,
+`output.post_observation` contains a separate `{success,output,error?}` read
+result. An observation failure or timeout does not undo the action or make it
+safe to retry. A rejected or uncertain action skips the read; uncertain effects
+must be reconciled with fresh observation before considering another action.
+If the complete response is lost, do not replay the combined call blindly.
+
+Both requests are pinned to the admitted Runner instance, with access and
+capability checks repeated at admission and dispatch. A replacement Runner or a
+closed window cannot redirect the observation to another target.
+If admission rejects the action before it is queued, the result retains
+`execution_state=not_started` and `state_changed=false`; no post-observation runs.
+A fresh tree replaces old element IDs and obeys the existing depth/node/content budgets.
+It may show intermediate application state; this is not an atomic UI transaction
+or an application-settled barrier. Each phase retains its existing bounded wait.
+The composition saves a Host round trip; it still uses two Runner requests.
+
 ## Current substrate
 
 Computer Use is semantic-first rather than coordinate-first. The model-facing surface is now deliberately small:

@@ -2476,6 +2476,53 @@ impl RunnerRegistry {
         auth: Option<&crate::RunnerAccess>,
         timeout_secs: u64,
     ) -> Result<(String, oneshot::Receiver<ShellRunResponse>), String> {
+        self.enqueue_computer_checked(
+            client_id,
+            kind,
+            payload,
+            requested_by,
+            auth,
+            timeout_secs,
+            None,
+        )
+        .await
+    }
+
+    /// Pin either phase of an action plus accessibility observation to the
+    /// admitted Runner instance. Both phases require accessibility capability;
+    /// admission and dequeue independently enforce this fence.
+    pub async fn enqueue_computer_for_instance(
+        &self,
+        client_id: String,
+        kind: &'static str,
+        payload: String,
+        requested_by: String,
+        auth: Option<&crate::RunnerAccess>,
+        timeout_secs: u64,
+        expected_runner_instance_id: &str,
+    ) -> Result<(String, oneshot::Receiver<ShellRunResponse>), String> {
+        self.enqueue_computer_checked(
+            client_id,
+            kind,
+            payload,
+            requested_by,
+            auth,
+            timeout_secs,
+            Some(expected_runner_instance_id),
+        )
+        .await
+    }
+
+    async fn enqueue_computer_checked(
+        &self,
+        client_id: String,
+        kind: &'static str,
+        payload: String,
+        requested_by: String,
+        auth: Option<&crate::RunnerAccess>,
+        timeout_secs: u64,
+        expected_runner_instance_id: Option<&str>,
+    ) -> Result<(String, oneshot::Receiver<ShellRunResponse>), String> {
         validate_id(&client_id, "client_id")?;
         let required_features: &[RunnerFeature] = match kind {
             "computer_list_applications" => &[RunnerFeature::ComputerApplicationDiscovery],
@@ -2529,6 +2576,16 @@ impl RunnerRegistry {
             .get(&client_id)
             .ok_or_else(|| format!("unknown shell client: {client_id}"))?;
         assert_runner_access(auth, current)?;
+        if let Some(expected) = expected_runner_instance_id {
+            if expected.is_empty() || current.runner_instance_id != expected {
+                return Err(
+                    "runner_replaced: Computer target Runner changed before admission".into(),
+                );
+            }
+            if !current.supports(RunnerFeature::ComputerAccessibilityObserve) {
+                return Err("capability_unavailable: post-observation requires computer_accessibility_observe".into());
+            }
+        }
         if let Some(required_feature) = required_features
             .iter()
             .copied()
@@ -2539,7 +2596,7 @@ impl RunnerRegistry {
                 required_feature.as_wire_name()
             ));
         }
-        enqueue_pending_request_locked(
+        enqueue_pending_request_with_fence_locked(
             self.telemetry.as_ref(),
             &mut inner,
             &client_id,
@@ -2547,6 +2604,12 @@ impl RunnerRegistry {
             request,
             Some(tx),
             None,
+            expected_runner_instance_id.map_or(PendingDispatchFence::Unfenced, |id| {
+                PendingDispatchFence::Computer {
+                    runner_instance_id: id.to_string(),
+                    access: auth.cloned(),
+                }
+            }),
         )
         .map_err(|error| error.to_string())?;
         notify_runner_locked(&inner, &client_id);

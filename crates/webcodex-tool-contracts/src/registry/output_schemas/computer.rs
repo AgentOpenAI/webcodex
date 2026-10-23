@@ -191,17 +191,23 @@ fn raw_output_schema_for_tool(name: &str) -> Option<Value> {
             "computer_snapshot_display",
             "computer_read_clipboard",
         ])),
-        "control_computer" => Some(merged_gateway_output_schema(&[
-            "computer_launch_application",
-            "computer_activate_window",
-            "__computer_element_control",
-            "computer_scroll_to_element",
-            "computer_key_input",
-            "computer_input_text",
-            "computer_pointer_move",
-            "computer_pointer_click",
-            "computer_write_clipboard",
-        ])),
+        "control_computer" => {
+            let mut schema = merged_gateway_output_schema(&[
+                "computer_launch_application",
+                "computer_activate_window",
+                "__computer_element_control",
+                "computer_scroll_to_element",
+                "computer_key_input",
+                "computer_input_text",
+                "computer_pointer_move",
+                "computer_pointer_click",
+                "computer_write_clipboard",
+            ]);
+            schema["properties"]["output"]["properties"]["post_observation"] =
+                output_schema_for_tool("computer_accessibility_tree")
+                    .expect("canonical tree output");
+            Some(schema)
+        }
         "computer_list_targets" => Some(wrapped_output_schema(vec![
             (
                 "targets",

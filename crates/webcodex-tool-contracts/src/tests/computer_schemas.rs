@@ -1,5 +1,49 @@
 use super::*;
 
+#[test]
+fn computer_post_observation_contract_is_explicit_and_narrow() {
+    let specs = registered_tool_specs();
+    let spec = spec_named(&specs, "control_computer");
+    assert!(action_properties(&spec.input_schema, "press").contains_key("observe_after"));
+    assert!(action_properties(&spec.input_schema, "input_text").contains_key("observe_after"));
+    assert!(!action_properties(&spec.input_schema, "focus").contains_key("observe_after"));
+    assert_eq!(
+        spec.output_schema["properties"]["output"]["properties"]["post_observation"]["properties"]
+            ["success"]["type"],
+        "boolean"
+    );
+    test_support::validate_schema_instance(
+        &json!({"success":true,"output":{"platform":"windows","surface_id":"surface_test",
+            "element_id":"element_test","action":"press","success":true,
+            "post_observation":{"success":false,"output":{"error_kind":"timeout","message":"read timed out"},"error":"read timed out"}}}),
+        &spec.output_schema,
+    ).unwrap();
+    for action in ["press", "input_text"] {
+        let mut args = json!({"action":action,"client_id":"runner","surface_id":"surface_test",
+            "element_id":"element_test", "observe_after":{"action":"accessibility_tree","max_depth":3,"max_nodes":32}});
+        if action == "input_text" {
+            args["text"] = json!("hello");
+        }
+        let call = ToolCall::from_tool_name("control_computer", args.clone()).unwrap();
+        let ToolCall::ComputerControl(control) = call else {
+            panic!("Computer control call")
+        };
+        assert_eq!(
+            serde_json::to_value(control).unwrap()["observe_after"],
+            args["observe_after"]
+        );
+        args["observe_after"]["action"] = json!("snapshot_display");
+        assert!(ToolCall::from_tool_name("control_computer", args).is_err());
+    }
+    assert!(ToolCall::from_tool_name(
+        "control_computer",
+        json!({"action":"focus",
+        "client_id":"runner","surface_id":"surface_test","element_id":"element_test",
+        "observe_after":{"action":"accessibility_tree"}})
+    )
+    .is_err());
+}
+
 fn action_branch<'a>(schema: &'a Value, action: &str) -> &'a Value {
     schema["oneOf"]
         .as_array()

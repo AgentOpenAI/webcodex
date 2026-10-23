@@ -6,10 +6,11 @@ use super::effects::{
     computer_application_effect_not_started, computer_application_launch_runner_error,
     computer_clipboard_write_delivery_failure, computer_clipboard_write_not_started,
     computer_clipboard_write_runner_error, computer_effect_delivery_failure,
-    computer_effect_outcome_unknown, computer_error, computer_error_recovery_message,
-    computer_error_with_client, computer_pointer_effect_delivery_failure,
-    computer_pointer_effect_not_started, computer_pointer_runner_error, computer_request_is_effect,
-    computer_text_input_runner_error, ClipboardWriteContext, PointerRequestContext,
+    computer_effect_not_started, computer_effect_outcome_unknown, computer_error,
+    computer_error_recovery_message, computer_error_with_client,
+    computer_pointer_effect_delivery_failure, computer_pointer_effect_not_started,
+    computer_pointer_runner_error, computer_request_is_effect, computer_text_input_runner_error,
+    ClipboardWriteContext, PointerRequestContext,
 };
 use super::responses::{validate_computer_response, ComputerResponseContext};
 use super::*;
@@ -43,6 +44,30 @@ impl ToolRuntime {
         list_limit: Option<usize>,
         expected_surface_id: Option<&str>,
         accessibility_bounds: Option<(usize, usize)>,
+    ) -> ToolResult {
+        self.dispatch_computer_request_for_instance(
+            client_id,
+            kind,
+            payload,
+            auth,
+            list_limit,
+            expected_surface_id,
+            accessibility_bounds,
+            None,
+        )
+        .await
+    }
+
+    pub(super) async fn dispatch_computer_request_for_instance(
+        &self,
+        client_id: &str,
+        kind: &'static str,
+        payload: Value,
+        auth: Option<&AuthContext>,
+        list_limit: Option<usize>,
+        expected_surface_id: Option<&str>,
+        accessibility_bounds: Option<(usize, usize)>,
+        expected_instance: Option<&str>,
     ) -> ToolResult {
         let expected_root_element_id = payload
             .get("root_element_id")
@@ -166,6 +191,9 @@ impl ToolRuntime {
                         .expect("clipboard write context"),
                 );
             }
+            Err(error) if expected_instance.is_some() && computer_request_is_effect(kind) => {
+                return computer_effect_not_started(&error);
+            }
             Err(error) => return computer_error("client_access_denied", &error),
         };
         for required_feature in required_features {
@@ -173,6 +201,11 @@ impl ToolRuntime {
                 continue;
             }
             let required_capability = required_feature.as_wire_name();
+            if expected_instance.is_some() && computer_request_is_effect(kind) {
+                return computer_effect_not_started(&format!(
+                    "target Runner does not support {required_capability}"
+                ));
+            }
             if is_application_launch {
                 return computer_application_effect_not_started(
                     "capability_unavailable",
@@ -255,18 +288,31 @@ impl ToolRuntime {
             }
         };
         let requested_by = crate::runner_http::requested_by_from_auth(auth);
-        let (request_id, mut receiver) = match self
-            .runner_registry
-            .enqueue_computer(
-                client_id.to_string(),
-                kind,
-                payload,
-                requested_by,
-                crate::runner_http::runner_access_from_auth(auth).as_ref(),
-                COMPUTER_WAIT_SECS,
-            )
-            .await
-        {
+        let enqueued = if let Some(instance) = expected_instance {
+            self.runner_registry
+                .enqueue_computer_for_instance(
+                    client_id.to_string(),
+                    kind,
+                    payload,
+                    requested_by,
+                    crate::runner_http::runner_access_from_auth(auth).as_ref(),
+                    COMPUTER_WAIT_SECS,
+                    instance,
+                )
+                .await
+        } else {
+            self.runner_registry
+                .enqueue_computer(
+                    client_id.to_string(),
+                    kind,
+                    payload,
+                    requested_by,
+                    crate::runner_http::runner_access_from_auth(auth).as_ref(),
+                    COMPUTER_WAIT_SECS,
+                )
+                .await
+        };
+        let (request_id, mut receiver) = match enqueued {
             Ok(value) => value,
             Err(error) if kind == "computer_launch_application" => {
                 return computer_application_effect_not_started(
@@ -291,6 +337,9 @@ impl ToolRuntime {
                         .as_ref()
                         .expect("clipboard write context"),
                 );
+            }
+            Err(error) if expected_instance.is_some() && computer_request_is_effect(kind) => {
+                return computer_effect_not_started(&error);
             }
             Err(error) => return computer_error("dispatch_denied", &error),
         };

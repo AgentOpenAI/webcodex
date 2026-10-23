@@ -29,10 +29,22 @@ pub(super) enum PendingDispatchFence {
     Unfenced,
     Project(ProjectDispatchFence),
     McpGateway(McpGatewayDispatchFence),
-    RunnerInstruction { runner_instance_id: String },
-    RunnerConfig { runner_instance_id: String },
-    SshResource { runner_instance_id: String },
-    Skill { runner_instance_id: String },
+    RunnerInstruction {
+        runner_instance_id: String,
+    },
+    RunnerConfig {
+        runner_instance_id: String,
+    },
+    SshResource {
+        runner_instance_id: String,
+    },
+    Skill {
+        runner_instance_id: String,
+    },
+    Computer {
+        runner_instance_id: String,
+        access: Option<crate::RunnerAccess>,
+    },
 }
 
 impl PendingDispatchFence {
@@ -71,6 +83,16 @@ impl PendingDispatchFence {
             | (Self::Skill { runner_instance_id }, RunnerOperation::Skill(_)) => {
                 !runner_instance_id.is_empty()
             }
+            (
+                Self::Computer {
+                    runner_instance_id, ..
+                },
+                RunnerOperation::Computer(op),
+            ) => {
+                use webcodex_core::runner_operation::RunnerComputerOperationKind::*;
+                !runner_instance_id.is_empty()
+                    && matches!(op.kind, Control | InputText | AccessibilityTree)
+            }
             _ => false,
         };
         if valid {
@@ -102,6 +124,39 @@ impl PendingDispatchFence {
         }
         match self {
             Self::Unfenced | Self::McpGateway(_) => None,
+            Self::Computer {
+                runner_instance_id,
+                access,
+            } => {
+                let Some(runner) = runner else {
+                    return Some(
+                        "runner_replaced: Computer target Runner disappeared before dispatch"
+                            .into(),
+                    );
+                };
+                if runner.runner_instance_id != *runner_instance_id {
+                    return Some(
+                        "runner_replaced: Computer target Runner changed before dispatch".into(),
+                    );
+                }
+                if super::access_control::assert_runner_access(access.as_ref(), runner).is_err() {
+                    return Some(
+                        "client_access_denied: Computer target access changed before dispatch"
+                            .into(),
+                    );
+                }
+                use webcodex_core::runner_operation::RunnerComputerOperationKind;
+                let feature = match operation {
+                    RunnerOperation::Computer(op) => match op.kind {
+                        RunnerComputerOperationKind::Control => RunnerFeature::ComputerControl,
+                        RunnerComputerOperationKind::InputText => RunnerFeature::ComputerTextInput,
+                        _ => RunnerFeature::ComputerAccessibilityObserve,
+                    },
+                    _ => unreachable!("Computer fence validated above"),
+                };
+                (!runner.supports(feature) || !runner.supports(RunnerFeature::ComputerAccessibilityObserve))
+                    .then(|| "capability_unavailable: Computer action or post-observation is unavailable before dispatch".into())
+            }
             Self::Project(fence) => fence.rejection(operation, runner),
             Self::Skill { runner_instance_id } => {
                 let Some(runner) = runner else {
