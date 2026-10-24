@@ -85,6 +85,10 @@ Job; do not invent a Job consume API or infer execution from `delivered` alone.
 Observe a further polling interval and verify there is no second turn or
 duplicated consume/delivery effect for the same logical event.
 
+The coordinator can use the [bounded read-only collector](../agent/continuation-evidence-capture.md)
+for exact Goal/Agent/Session Server metadata after resources exist. It records
+partial capture explicitly and does not dispatch Wakes or replace Host evidence.
+
 Retain only bounded, redacted evidence. Omit credentials, binding/claim fences,
 consume tokens, raw automatic envelopes and private Conversation content.
 `delivery_unknown` must never cause an automatic resend; use the established
