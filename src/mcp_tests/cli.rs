@@ -525,7 +525,12 @@ fn cli_manifest_routes_match_the_advertised_surface() {
         let mut result = ToolResult::ok(
             json!({"name":name,"route":{"mode":"wrong"},"input_schema":webcodex_tool_contracts::input_schema_for_tool(name)}),
         );
-        crate::mcp::cli::project_manifest(&mut result, true, true);
+        crate::mcp::cli::project_manifest(&mut result, true);
+        crate::mcp::tool_exposure::ToolExposure::default().project_manifest(
+            &mut result,
+            McpSurface::Cli,
+            true,
+        );
         assert_eq!(result.output["route"]["mode"], mode);
     }
 }

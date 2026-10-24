@@ -538,7 +538,21 @@ The Direct reasons are:
   metadata; while that integration is enabled it must not be replaced by a
   generic gateway call;
 - **Continuation** — fresh-turn/continuation integration whose value depends on
-  concrete Host lifecycle capability.
+  concrete Host lifecycle capability;
+- **HostReview** — a dedicated Host descriptor is required for normal Host
+  review before trial. The nine canonical tools covered by this policy are
+  `create_agent_identity`, `rotate_agent_continuation_endpoint`,
+  `list_agent_identities`, `prepare_goal_workflow`, `get_goal`,
+  `checkpoint_goal`, `update_goal`, `bootstrap_agent_conversation`, and
+  `consume_agent_wake`. Their descriptors must retain the complete canonical
+  input schema, accurate effect annotations and applicable OAuth requirements;
+  permission checks remain authoritative on the Server. This reason
+  always blocks `call_runtime_tool` fallback and `_wc.control` forms of these
+  operations before any main or sidecar effect, including when the Host omits or
+  rejects the dedicated descriptor. It grants no runtime authority and does
+  not change the operation's ordinary authorization, ownership, lifecycle,
+  replay-safety, or effect checks. Host exposure does not establish that a
+  refusal has been fixed or that a Host will accept the tool.
 
 Gateway is the absence of a Direct policy plus ordinary model-visible admission,
 not another Direct reason or a second tool taxonomy.
@@ -550,6 +564,14 @@ changing its canonical name or domain contract. Presentation tools remain
 dedicated when their Host resource association requires the direct descriptor.
 CoreWorkflow tools should not be demoted merely to meet an arbitrary count
 target.
+
+HostReview is a static per-definition exposure reason, not a client profile or
+request-time override. MCP may omit the corresponding workflow group through
+[`WEBCODEX_MCP_TOOL_EXPOSURE`](../MCP.md#optional-workflow-tools-per-client);
+enabling it exposes the canonical dedicated tools, including on CLI. Disabling
+it must not translate HostReview into a gateway fallback. Its no-fallback rule is
+specific to the nine tools listed above. It does not change ordinary Direct fallback behavior, generic gateway
+annotations, or ModelHidden admission; hidden App methods remain hidden.
 
 Direct/Gateway decisions therefore belong to model-surface policy and measured
 Host ergonomics. Tool names, categories, parser variants, persisted identities,

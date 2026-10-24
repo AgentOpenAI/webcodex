@@ -48,7 +48,7 @@ pub(super) fn is_app_tool(name: &str) -> bool {
 }
 
 pub(super) fn suggested_route(name: &str, stateless: bool) -> SuggestedToolCallRoute {
-    if is_app_tool(name) {
+    if is_app_tool(name) || crate::model_surface::tool_requires_individual_host_review(name) {
         SuggestedToolCallRoute::Unavailable
     } else if is_direct(name) {
         SuggestedToolCallRoute::Direct
@@ -62,14 +62,23 @@ pub(super) fn suggested_route(name: &str, stateless: bool) -> SuggestedToolCallR
     }
 }
 
+#[cfg(test)]
 pub(super) fn tools_list(auth: Option<&AuthContext>, default_project: bool) -> Value {
+    tools_list_with_exposure(auth, default_project, Default::default())
+}
+
+pub(super) fn tools_list_with_exposure(
+    auth: Option<&AuthContext>,
+    default_project: bool,
+    exposure: super::tool_exposure::ToolExposure,
+) -> Value {
     let specs = webcodex_tool_contracts::registry::registered_tool_descriptors()
         .into_iter()
-        .filter(|spec| is_direct(&spec.name))
+        .filter(|spec| exposure.is_direct(super::request_policy::McpSurface::Cli, &spec.name))
         .collect();
     let mut tools: Vec<Value> = super::tools::filter_descriptors_for_oauth(specs, auth)
         .into_iter()
-        .map(|spec| super::tools::mcp_tool_descriptor_json(spec, true, false, None))
+        .map(|spec| super::tools::mcp_tool_descriptor_json(spec, true, false))
         .collect();
     tools.push(super::tools::adaptive_runtime_gateway_tool_json(true));
     for tool in &mut tools {
@@ -155,20 +164,14 @@ pub(super) fn project_default_schema(tool: &str, schema: &mut Value) {
 
 pub(super) fn project_manifest(
     result: &mut crate::tool_runtime::ToolResult,
-    stateless: bool,
     default_project: bool,
 ) {
     if !result.success {
         return;
     }
-    fn entry(value: &mut Value, stateless: bool, default_project: bool) {
+    fn entry(value: &mut Value, default_project: bool) {
         let Some(name) = value["name"].as_str().map(str::to_string) else {
             return;
-        };
-        value["route"] = match suggested_route(&name, stateless) {
-            SuggestedToolCallRoute::Direct => json!({"mode":"direct"}),
-            SuggestedToolCallRoute::Gateway(via) => json!({"mode":"gateway", "via":via}),
-            SuggestedToolCallRoute::Unavailable => json!({"mode":"unavailable"}),
         };
         if default_project {
             if let Some(schema) = value.get_mut("input_schema") {
@@ -184,10 +187,10 @@ pub(super) fn project_manifest(
             }
         }
     }
-    entry(&mut result.output, stateless, default_project);
+    entry(&mut result.output, default_project);
     if let Some(tools) = result.output.get_mut("tools").and_then(Value::as_array_mut) {
         for tool in tools {
-            entry(tool, stateless, default_project);
+            entry(tool, default_project);
         }
     }
 }
