@@ -287,7 +287,11 @@ fn computer_key_schema_discloses_closed_vocabulary_and_modifier_constraints() {
     let specs = registered_tool_specs();
     let spec = spec_named(&specs, "control_computer");
     let key = action_properties(&spec.input_schema, "key");
-    assert_eq!(key["key"]["enum"], json!(COMPUTER_KEY_INPUT_KEYS));
+    let keys: Vec<_> = COMPUTER_KEY_INPUT_KEYS
+        .iter()
+        .chain(webcodex_core::computer_input_contract::COMPUTER_LETTER_SHORTCUT_KEYS)
+        .collect();
+    assert_eq!(key["key"]["enum"], json!(keys));
     let modifiers = key["modifiers"]["anyOf"]
         .as_array()
         .unwrap()
@@ -352,6 +356,82 @@ fn computer_key_schema_discloses_closed_vocabulary_and_modifier_constraints() {
             spec.description.contains(text),
             "missing model guidance: {text}"
         );
+    }
+}
+
+#[test]
+fn computer_key_letter_shortcuts_require_the_exact_control_chord() {
+    let schema = crate::input_schema_for_tool("control_computer");
+    for key in ["j", "p"] {
+        let input = json!({"action":"key", "client_id":"client", "surface_id":"surface_test", "key":key, "modifiers":["control"]});
+        test_support::validate_schema_instance(&input, &schema).unwrap();
+        ToolCall::from_tool_name("control_computer", input.clone()).unwrap();
+        for modifiers in [
+            None,
+            Some(Value::Null),
+            Some(json!([])),
+            Some(json!(["shift"])),
+            Some(json!(["option"])),
+            Some(json!(["command"])),
+            Some(json!(["ctrl"])),
+            Some(json!(["control", "shift"])),
+            Some(json!(["control", "option"])),
+            Some(json!(["control", "control"])),
+        ] {
+            let mut invalid = input.clone();
+            invalid.as_object_mut().unwrap().remove("modifiers");
+            if let Some(modifiers) = modifiers {
+                invalid["modifiers"] = modifiers;
+            }
+            assert!(
+                test_support::validate_schema_instance(&invalid, &schema).is_err(),
+                "{invalid}"
+            );
+        }
+    }
+}
+
+#[test]
+fn computer_key_success_receipts_fit_primitive_and_gateway_output_schemas() {
+    let specs = registered_tool_specs();
+    let control = spec_named(&specs, "control_computer");
+    let primitive = output_schema_for_tool("computer_key_input");
+    let output_schemas = [
+        ("computer_key_input", &primitive),
+        ("control_computer", &control.output_schema),
+    ];
+    let mut failures = Vec::new();
+    for key in webcodex_core::computer_input_contract::COMPUTER_KEY_INPUT_KEYS
+        .iter()
+        .copied()
+        .chain(["j", "p"])
+    {
+        let modifiers = if matches!(key, "j" | "p") {
+            json!(["control"])
+        } else {
+            json!([])
+        };
+        let input = json!({"action":"key", "client_id":"client", "surface_id":"surface_test",
+            "key":key, "modifiers":modifiers});
+        test_support::validate_schema_instance(&input, &control.input_schema).unwrap();
+        let receipt = json!({"success":true, "output":{"platform":"windows",
+            "surface_id":"surface_test", "key":key, "modifiers":modifiers, "success":true}});
+        for (name, schema) in output_schemas {
+            if let Err(error) = test_support::validate_schema_instance(&receipt, schema) {
+                failures.push(format!("{name} {key}: {error}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+    for key in ["a", "Ctrl+P", "P"] {
+        let receipt = json!({"success":true, "output":{"platform":"windows",
+            "surface_id":"surface_test", "key":key, "modifiers":["control"], "success":true}});
+        for (name, schema) in output_schemas {
+            assert!(
+                test_support::validate_schema_instance(&receipt, schema).is_err(),
+                "{name} accepted {receipt}"
+            );
+        }
     }
 }
 
