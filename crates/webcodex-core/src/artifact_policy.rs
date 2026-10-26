@@ -234,6 +234,13 @@ pub fn mime_is_compatible_with_path(mime: &str, path: &str) -> bool {
 /// 2 MiB HTTP text/body limit.
 pub const MAX_MCP_IMAGE_BYTES: usize = 4 * 1024 * 1024;
 
+/// One explicit presentation batch, independent of the native Runner image envelope.
+pub const MAX_IMAGE_GALLERY_ITEMS: usize = 16;
+pub const MAX_IMAGE_GALLERY_BYTES: usize = 32 * 1024 * 1024;
+/// Originals are read privately; native MCP image envelopes remain 4 MiB.
+pub const MAX_IMAGE_SOURCE_BYTES: usize = 64 * 1024 * 1024;
+pub const MAX_IMAGE_PREVIEW_BYTES: usize = 2 * 1024 * 1024;
+
 /// Maximum runner stdout retained for an MCP image artifact response.
 ///
 /// Normal runner output remains capped at 256 KiB. Six MiB covers a maximum

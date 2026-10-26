@@ -105,6 +105,14 @@ fn derive_tool_input_schemas() -> BTreeMap<String, Value> {
 // Accepted legacy inputs remain in ToolCall serde. Model discovery advertises
 // only parameters that affect execution, using the same derived query schema.
 fn project_compatibility_inputs(tool_name: &str, schema: &mut Value) {
+    if tool_name == "present_image" {
+        // The deployed 055b4161 ChatGPT single-image consumer retains path;
+        // batch selection uses paths. Mirror the canonical parser's XOR rule.
+        schema["allOf"] = json!([{"oneOf":[
+            {"required":["path"],"not":{"required":["paths"]}},
+            {"required":["paths"],"not":{"required":["path"]}}
+        ]}]);
+    }
     if tool_name == "work_on_project" {
         // serde's empty string is an internal omission sentinel, not a valid
         // caller value. Keep this optional field and its nonempty constraint.

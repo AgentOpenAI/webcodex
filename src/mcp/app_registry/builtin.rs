@@ -1,5 +1,7 @@
 //! One inventory owns template identity, discovery, binding and optional metadata.
-//! v0.5 serves exact current URIs only; retired identities are not read aliases.
+//! Retained resources normally keep their exact template. Image history uses
+//! the same read-only renderer after the operator explicitly removed its former
+//! file-transfer UI; prior image argument/result shapes remain readable.
 //! Advance an App URI when shipping changed HTML or an incompatible App contract.
 
 use super::{AppListing, BundledMcpApp};
@@ -33,8 +35,45 @@ pub(in crate::mcp) const MCP_JOB_TERMINAL_CONTINUATION_APP_HTML: &str =
     include_str!("../../mcp_job_terminal_continuation_app.html");
 
 pub(in crate::mcp) const MCP_PDF_UI_RESOURCE_URI: &str = "ui://webcodex/pdf/v7";
+pub(in crate::mcp) const MCP_IMAGE_UI_RESOURCE_URI: &str = "ui://webcodex/image/v5";
+pub(in crate::mcp) const MCP_IMAGE_V1_UI_RESOURCE_URI: &str = "ui://webcodex/image/v1";
+const MCP_IMAGE_APP_HTML: &str = include_str!("../../mcp_image_app.html");
 
 pub(super) static BUILTIN_MCP_APPS: &[BundledMcpApp] = &[
+    BundledMcpApp {
+        listing: Some(AppListing {
+            name: "WebCodex Image",
+            description: "Read-only ordered project image gallery with automatic bounded previews and per-image failures.",
+        }),
+        tools: &["present_image"],
+        tool_title: Some("查看图片"),
+        resource_domains: &["blob:"],
+        read_display_modes: &["inline", "fullscreen"],
+        ..BundledMcpApp::template(MCP_IMAGE_UI_RESOURCE_URI, MCP_IMAGE_APP_HTML)
+    },
+    // Concrete historical ChatGPT cards keep readable image contracts. The
+    // operator explicitly removed file-transfer UI from all served image views,
+    // so these hidden bindings share the current read-only renderer.
+    BundledMcpApp {
+        resource_domains: &["blob:"],
+        read_display_modes: &["inline", "fullscreen"],
+        ..BundledMcpApp::template("ui://webcodex/image/v4", MCP_IMAGE_APP_HTML)
+    },
+    BundledMcpApp {
+        resource_domains: &["blob:"],
+        read_display_modes: &["inline", "fullscreen"],
+        ..BundledMcpApp::template("ui://webcodex/image/v3", MCP_IMAGE_APP_HTML)
+    },
+    BundledMcpApp {
+        resource_domains: &["blob:"],
+        read_display_modes: &["inline", "fullscreen"],
+        ..BundledMcpApp::template("ui://webcodex/image/v2", MCP_IMAGE_APP_HTML)
+    },
+    BundledMcpApp {
+        resource_domains: &["blob:"],
+        read_display_modes: &["inline", "fullscreen"],
+        ..BundledMcpApp::template(MCP_IMAGE_V1_UI_RESOURCE_URI, MCP_IMAGE_APP_HTML)
+    },
     BundledMcpApp {
         listing: Some(AppListing { name: "WebCodex PDF", description: "Dedicated read-only PDF reader for one explicitly selected project document." }),
         tools: &["present_pdf"],

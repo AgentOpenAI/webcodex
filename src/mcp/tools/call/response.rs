@@ -155,6 +155,11 @@ impl RuntimeResponse {
                 result["_meta"]["webcodex/spreadsheetSource"] = structured;
             }
         }
+        if server_mcp_apps_enabled && tool_name == "present_image" {
+            if let Some(structured) = result.get("structuredContent").cloned() {
+                result["_meta"]["webcodex/imageDocument"] = structured;
+            }
+        }
         if surface.echo_app_content {
             // ChatGPT production has been observed to complete View-originated
             // tools/call server-side while not forwarding structuredContent back to

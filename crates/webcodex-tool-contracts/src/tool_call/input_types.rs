@@ -1,3 +1,48 @@
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ImagePreviewSelection {
+    #[schemars(range(min = 12, max = 2097152))]
+    pub bytes: usize,
+    #[schemars(regex(pattern = "^[0-9a-f]{64}$"))]
+    pub sha256: String,
+}
+
+fn deserialize_non_null_image_selection<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
+/// Canonical structural selection guard, reused by internal execution callers.
+/// Filesystem/sensitive-path and Project authority checks remain with the runtime.
+pub fn validate_image_presentation_selection(
+    path: Option<&str>,
+    paths: Option<&[String]>,
+) -> Result<(), String> {
+    let selected = match (path, paths) {
+        (Some(path), None) => vec![path],
+        (None, Some(paths))
+            if (1..=webcodex_core::artifact_policy::MAX_IMAGE_GALLERY_ITEMS).contains(&paths.len()) =>
+        {
+            paths.iter().map(String::as_str).collect()
+        }
+        _ => return Err("supply exactly one of path or paths; paths must contain 1..16 images".to_string()),
+    };
+    let mut seen = HashSet::new();
+    for path in selected {
+        if path.is_empty() || path.len() > 512 || path.chars().any(char::is_control) || path.contains('\\') {
+            return Err("each image path must contain 1..512 bytes without control characters or backslashes".to_string());
+        }
+        let normalized = path.split('/').filter(|part| !part.is_empty() && *part != ".").collect::<Vec<_>>().join("/");
+        if normalized.is_empty() || !seen.insert(normalized) {
+            return Err("image paths must not be empty or repeat the same normalized path".to_string());
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum WebcodexResourceKind {

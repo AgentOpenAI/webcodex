@@ -41,6 +41,8 @@ mod edit_tool_telemetry;
 mod file_tools;
 pub(crate) mod files;
 mod git;
+mod image_document;
+mod image_preview;
 mod runner_authorization;
 mod runner_config;
 mod runner_instructions;

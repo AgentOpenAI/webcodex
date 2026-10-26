@@ -182,6 +182,15 @@ pub fn sample_tool_args(name: &str) -> Value {
 }
 
 pub fn sample_tool_args_for_spec(spec: &ToolSpec) -> Value {
+    // Explicit semantic fixture for the deployed single-image consumer. The
+    // generic generator does not choose required-only branches inside allOf;
+    // validate the whole canonical XOR schema rather than relaxing it.
+    if spec.name == "present_image" {
+        let value = json!({"project":"agent:oe:private-drop","path":"assets/logo.png"});
+        validate_schema_instance(&value, &spec.input_schema)
+            .expect("single-image semantic fixture must satisfy the canonical selection schema");
+        return value;
+    }
     let mut value = generate(&spec.input_schema, 0, &mut 256, true)
         .unwrap_or_else(|error| panic!("{}: {error}", spec.name));
     let args = value.as_object_mut().expect("tool object sample");

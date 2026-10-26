@@ -13,6 +13,7 @@ use std::sync::Mutex;
 
 #[derive(Default)]
 pub(super) struct PresentationRuntime {
+    pub(super) image_previews: super::image_preview::ImagePreviewStore,
     review_snapshots: Mutex<GitReviewSnapshotRegistry>,
     changes_snapshots: Mutex<ChangesSnapshotRegistry>,
     workspace_cache: WorkResultWorkspaceCache,

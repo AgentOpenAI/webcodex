@@ -176,6 +176,22 @@ pub enum ToolCall {
         include_validation_summary: Option<bool>,
     },
 
+    /// Show one image or one explicit bounded image batch in one preview surface.
+    PresentImage {
+        #[schemars(length(min = 1, max = 512))]
+        project: String,
+        /// Existing single-image input. Supply exactly one of path or paths.
+        #[schemars(length(min = 1, max = 512))]
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_non_null_image_selection")]
+        path: Option<String>,
+        /// Ordered image paths for one gallery. Never omit images by repeatedly replacing a card.
+        #[schemars(length(min = 1, max = webcodex_core::artifact_policy::MAX_IMAGE_GALLERY_ITEMS))]
+        #[schemars(inner(length(min = 1, max = 512)))]
+        #[schemars(extend("uniqueItems" = true))]
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_non_null_image_selection")]
+        paths: Option<Vec<String>>,
+    },
+
     /// Select one authorized DOCX version for a dedicated read-only reader.
     PresentDocx {
         #[schemars(length(min = 1, max = 512))]
@@ -204,6 +220,9 @@ pub enum ToolCall {
         bytes: usize,
         #[schemars(range(min = 0, max = 268435455))]
         byte_offset: usize,
+        /// Explicit derived image version; outer identity still pins its original source.
+        #[serde(default, skip_serializing_if = "Option::is_none", deserialize_with = "deserialize_non_null_image_selection")]
+        image_preview: Option<ImagePreviewSelection>,
     },
 
     /// Explicitly present one persistent card for the current client Window.

@@ -179,7 +179,7 @@ pub(super) const DEFINITIONS: &[ToolDefinition] = &[
                 false,
                 super::ToolSessionEvidencePolicy::NONE,
             ),
-            "Project artifact read: metadata=facts; inspect=fenced segment; image=MCP image; export=MCP ResourceLink. Use export for whole files, not repeated inspect calls; use import_host_files for host-to-Project attachments.",
+            "Project artifact read: metadata=facts; inspect=fenced segment; image=MCP image for model inspection; export=MCP ResourceLink. Use present_image when the user asks to see an image in chat; native image delivery alone does not prove user-visible display. Use export for whole files, not repeated inspect calls; use import_host_files for host-to-Project attachments.",
         ),
         56,
         super::ToolDirectReason::CoreWorkflow,

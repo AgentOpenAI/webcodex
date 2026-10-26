@@ -403,6 +403,10 @@ impl ToolCall {
             wrapped.iter().map(|(key, value)| (*key, value)),
         ))
         .map_err(|error| safe_argument_error(name, input, error))?;
+        if let Self::PresentImage { path, paths, .. } = &call {
+            validate_image_presentation_selection(path.as_deref(), paths.as_deref())
+                .map_err(|error| format!("invalid arguments for tool '{name}': {error}"))?;
+        }
         if let Self::SearchAndRead { query, queries, .. } = &call {
             validate_search_context_query_selection(
                 query.is_some(),
@@ -442,6 +446,7 @@ impl ToolCall {
             Self::WorkOnProject { .. } => "work_on_project",
             Self::FinishCodingTask { .. } => "finish_coding_task",
             Self::PresentDocx { .. } => "present_docx",
+            Self::PresentImage { .. } => "present_image",
             Self::PresentPdf { .. } => "present_pdf",
             Self::ReadAppArtifactChunk { .. } => "read_app_artifact_chunk",
             Self::PresentWorkResult { .. } => "present_work_result",
@@ -892,6 +897,7 @@ impl ToolCall {
             }
             Self::FinishCodingTask { project, .. }
             | Self::PresentDocx { project, .. }
+            | Self::PresentImage { project, .. }
             | Self::PresentPdf { project, .. }
             | Self::ReadAppArtifactChunk { project, .. }
             | Self::PresentWorkResult { project, .. }

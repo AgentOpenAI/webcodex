@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>WebCodex 图片</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#202124;--muted:#646970;--line:#dedfe3;--canvas:#f3f4f6;--error:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#202123;--fg:#eee;--muted:#bbc0c8;--line:#41434a;--canvas:#161719;--error:#ffb4ab}}
+*{box-sizing:border-box}body{margin:0;color:var(--fg);background:var(--bg);font:14px/1.5 system-ui,sans-serif}main{padding:12px}#gallery-header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:12px}h1{font-size:16px;margin:0}#summary,#gallery-status{color:var(--muted);overflow-wrap:anywhere}#gallery{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}@media(min-width:700px){#gallery.multiple{grid-template-columns:repeat(2,minmax(0,1fr))}}article{min-width:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}.card-header{display:flex;align-items:center;gap:8px;padding:10px 12px;flex-wrap:wrap}.filename{font-size:14px;margin:0;flex:1;min-width:100px;overflow-wrap:anywhere}.ordinal{color:var(--muted);font-size:12px}.actions{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px}button{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);cursor:pointer}button:focus-visible{outline:2px solid #5575ff;outline-offset:2px}button:disabled{opacity:.5;cursor:default}.viewport{min-height:100px;max-height:65vh;overflow:auto;background:var(--canvas);padding:12px;text-align:center}.preview{display:block;margin:auto;max-width:100%;max-height:440px;height:auto;object-fit:contain}.preview.actual{max-width:none;max-height:none}.item-status{padding:16px 4px;color:var(--muted);overflow-wrap:anywhere}article[data-state=error] .item-status{color:var(--error)}.details{padding:9px 12px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}.note{margin:12px 0 0;font-size:12px;color:var(--muted)}[hidden]{display:none!important}
+</style></head><body><main>
+<div id="gallery-header"><h1>图片预览</h1><span id="summary" role="status" aria-live="polite"></span></div>
+<div id="gallery-status" role="status" aria-live="polite">正在连接图片预览…</div><div id="gallery"></div>
+<p class="note">小图优先显示原图；大图或超出整批预算时显示压缩预览，原图保持不变。源文件需要保留。</p>
+</main><script>
+(() => {
+  const MAX_IMAGES=16, MAX_BYTES=4*1024*1024, MAX_SOURCE=64*1024*1024, MAX_TOTAL_BYTES=32*1024*1024, MAX_PIXELS=67108864, CHUNK=512*1024;
+  const MIMES=new Set(['image/png','image/jpeg','image/webp']), pending=new Map(), encoder=new TextEncoder();
+  const el=id=>document.getElementById(id);
+  let nextId=1, generation=0, disposed=false, initialized=false;
+  let readsActive=0, readWaiters=[];
+  let items=[], queue=[], active=0, retainedPixels=0, resizeFrame=null;
+  function notifySize(){
+    if(disposed||resizeFrame!==null)return;
+    resizeFrame=requestAnimationFrame(()=>{resizeFrame=null;if(!disposed)window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/size-changed',params:{height:document.documentElement.scrollHeight}},'*');});
+  }
+  const observer=new ResizeObserver(notifySize);observer.observe(document.querySelector('main'));
+  function request(method,params,timeoutMs=20000,epoch=generation){
+    if(disposed)return Promise.reject(new Error('图片预览已关闭'));
+    const id=nextId++;
+    return new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{pending.delete(id);if(method==='tools/call')window.parent.postMessage({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId:id,reason:'Image read deadline expired'}},'*');reject(new Error('请求超时，请重试当前图片'));},Math.max(1,timeoutMs));
+      pending.set(id,{resolve,reject,timer,method,epoch});
+      window.parent.postMessage({jsonrpc:'2.0',id,method,params},'*');
+    });
+  }
+  function candidates(value){
+    const result=[],seen=new Set(),todo=[value];
+    while(todo.length&&result.length<24){
+      const item=todo.shift();if(!item||typeof item!=='object'||seen.has(item))continue;
+      seen.add(item);result.push(item);
+      for(const key of ['result','toolResult','tool_result','call_tool_result','mcp_tool_result'])if(item[key]&&typeof item[key]==='object')todo.push(item[key]);
+    }
+    return result;
+  }
+  const canonical=value=>value&&typeof value.success==='boolean'&&(Object.hasOwn(value,'output')||Object.hasOwn(value,'error'));
+  function envelope(value){
+    for(const item of candidates(value)){
+      if(canonical(item))return item;
+      for(const block of Array.isArray(item.content)?item.content:[]){
+        if(block.type!=='text'||typeof block.text!=='string'||block.text.length>131072)continue;
+        try{const parsed=JSON.parse(block.text);if(canonical(parsed))return parsed;}catch{}
+      }
+    }
+    for(const item of candidates(value)){
+      const privateResult=(item._meta??item.meta)?.['webcodex/imageDocument'];if(canonical(privateResult))return privateResult;
+    }
+    for(const item of candidates(value))if(canonical(item.structuredContent))return item.structuredContent;
+    return null;
+  }
+  function privateChunk(value){
+    for(const item of candidates(value)){
+      const chunk=(item._meta??item.meta)?.['webcodex/artifactChunk'];if(chunk&&typeof chunk==='object')return chunk;
+    }
+    return null;
+  }
+  function boundedString(value,max){return typeof value==='string'&&value.length>0&&encoder.encode(value).length<=max;}
+  function validPath(value){return boundedString(value,512)&&!/^(?:\/|[A-Za-z]:)/.test(value)&&!/[\\\0-\x1f\x7f]/.test(value)&&!value.split('/').includes('..');}
+  function validIdentity(value){
+    return value&&boundedString(value.project,512)&&validPath(value.path)&&boundedString(value.name,255)&&!/[\/\\\0-\x1f\x7f]/.test(value.name)&&value.name!=='.'&&value.name!=='..'
+      &&MIMES.has(value.mime_type)&&/^[0-9a-f]{64}$/.test(value.sha256)
+      &&Number.isSafeInteger(value.bytes)&&value.bytes>=12&&value.bytes<=MAX_SOURCE
+      &&(Object.hasOwn(value,'preview')?validPreview(value.preview):value.bytes<=MAX_BYTES);
+  }
+  function validPreview(value){return value&&Number.isSafeInteger(value.bytes)&&value.bytes>=12&&value.bytes<=2*1024*1024&&/^[0-9a-f]{64}$/.test(value.sha256)&&value.mime_type==='image/webp'&&Number.isInteger(value.width)&&value.width>0&&value.width<=2048&&Number.isInteger(value.height)&&value.height>0&&value.height<=2048&&typeof value.static_frame==='boolean';}
+  function parseItems(body){
+    const gallery=body?.output?.image_gallery;
+    let selected;
+    if(Array.isArray(gallery))selected=gallery;
+    else if(body?.success===true&&body?.output?.image_document)selected=[{image_document:body.output.image_document}];
+    else throw new Error('未收到可预览的图片，请重新调用图片预览');
+    if(selected.length<1||selected.length>MAX_IMAGES)throw new Error('一次仅支持 1 至 16 张图片，请重新选择，未隐藏任何超限图片');
+    const paths=new Set();let total=0,project=null;
+    return selected.map(entry=>{
+      if(!entry||typeof entry!=='object')throw new Error('图片列表格式无效');
+      let identity=null,error=null,path;
+      if(Object.hasOwn(entry,'image_document')){
+        if(!validIdentity(entry.image_document))throw new Error('图片身份或大小无效');
+        identity=entry.image_document;path=identity.path;total+=(identity.preview??identity).bytes;
+        if(project!==null&&project!==identity.project)throw new Error('图库中的项目身份不一致');project=identity.project;
+      }else{
+        if(!validPath(entry.path)||!boundedString(entry.error_kind,128)||!boundedString(entry.message,512))throw new Error('图片错误条目格式无效');
+        path=entry.path;error=entry.message;
+      }
+      const normalized=path.split('/').filter(part=>part&&part!=='.').join('/');
+      if(!normalized||paths.has(normalized))throw new Error('图片路径重复，请重新选择，未静默删除重复项');
+      paths.add(normalized);
+      if(total>MAX_TOTAL_BYTES)throw new Error('图片总大小超过 32 MiB，请重新选择，未隐藏任何超限图片');
+      return {identity,error,path};
+    });
+  }
+  function updateSummary(){
+    if(disposed)return;
+    const ready=items.filter(item=>item.stage==='ready').length,failed=items.filter(item=>item.stage==='error').length;
+    el('summary').textContent=items.length?`共 ${items.length} 张 · 已显示 ${ready} 张${failed?` · 失败 ${failed} 张`:''}${ready+failed<items.length?` · 加载中 ${items.length-ready-failed} 张`:''}`:'';
+    notifySize();
+  }
+  function clearImage(item){
+    if(item.pixels){retainedPixels=Math.max(0,retainedPixels-item.pixels);item.pixels=0;}
+    item.localPreview=null;item.image.hidden=true;item.image.removeAttribute('src');
+    if(item.cancelDecode){const cancel=item.cancelDecode;item.cancelDecode=null;cancel();}
+    if(item.url)URL.revokeObjectURL(item.url);item.url=null;
+    item.fit.hidden=true;
+  }
+  function failItem(item,message){
+    clearImage(item);item.stage='error';item.card.dataset.state='error';item.status.hidden=false;item.status.textContent=message;
+    item.retry.hidden=!item.identity;item.retry.disabled=false;updateSummary();
+  }
+  function current(item,epoch,token){return !disposed&&epoch===generation&&item.token===token&&items.includes(item);}
+  function createItem(selected,index,count){
+    const card=document.createElement('article');card.dataset.index=String(index);card.dataset.state='queued';
+    const header=document.createElement('div');header.className='card-header';
+    const ordinal=document.createElement('span');ordinal.className='ordinal';ordinal.textContent=`${index+1} / ${count}`;
+    const title=document.createElement('h2');title.className='filename';title.id=index===0?'filename':`filename-${index}`;title.textContent=selected.identity?.name??selected.path;
+    card.setAttribute('aria-labelledby',title.id);header.append(ordinal,title);
+    const actions=document.createElement('div');actions.className='actions';
+    const button=(kind,text)=>{const node=document.createElement('button');node.className=kind;node.id=index===0?kind:`${kind}-${index}`;node.textContent=text;node.hidden=true;actions.append(node);return node;};
+    const fit=button('fit','原始尺寸'),retry=button('retry','重试');
+    const viewport=document.createElement('div');viewport.className='viewport';
+    const status=document.createElement('div');status.className='item-status';status.id=index===0?'status':`status-${index}`;status.setAttribute('role','status');status.setAttribute('aria-live','polite');status.textContent='等待加载…';
+    const image=document.createElement('img');image.className='preview';image.id=index===0?'image':`image-${index}`;image.alt=selected.identity?.name??selected.path;image.hidden=true;
+    viewport.append(status,image);
+    const details=document.createElement('div');details.className='details';details.id=index===0?'details':`details-${index}`;details.textContent=selected.path;
+    card.append(header,actions,viewport,details);el('gallery').append(card);
+    const item={...selected,card,status,image,details,fit,retry,stage:'queued',token:0,pixels:0,url:null};
+    fit.onclick=()=>{const actual=image.classList.toggle('actual');fit.textContent=actual?'适应宽度':'原始尺寸';notifySize();};
+    retry.onclick=()=>enqueue(item,true);
+    return item;
+  }
+  function cancelPrevious(){
+    for(const [id,p] of pending){
+      if(p.method==='tools/call'){
+        if(p.method==='tools/call'&&!p.cancelled)window.parent.postMessage({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId:id,reason:'Selected image gallery changed'}},'*');
+        p.cancelled=true; // Drain this in-flight read before releasing the two-request concurrency slot.
+      }else if(p.method!=='ui/initialize'){clearTimeout(p.timer);pending.delete(id);p.reject(new Error('已选择另一组图片'));}
+    }
+    for(const waiter of readWaiters){clearTimeout(waiter.timer);waiter.reject(new Error('已选择另一组图片'));}readWaiters=[];
+    queue=[];for(const item of items){item.token++;clearImage(item);}items=[];retainedPixels=0;
+    el('gallery').replaceChildren();
+  }
+  function toolResult(value){
+    if(disposed)return;
+    generation++;cancelPrevious();
+    let selected;
+    try{selected=parseItems(envelope(value));}
+    catch(error){el('gallery-status').hidden=false;el('gallery-status').textContent=error.message;updateSummary();return;}
+    el('gallery-status').hidden=true;el('gallery').classList.toggle('multiple',selected.length>1);
+    items=selected.map((entry,index)=>createItem(entry,index,selected.length));
+    for(const item of items)if(item.error)failItem(item,item.error);
+    if(initialized)startBatch();else updateSummary();
+  }
+  function startBatch(){
+    const deadline=performance.now()+180000;
+    for(const item of items)if(item.identity&&item.stage==='queued')enqueue(item,false,deadline);
+    updateSummary();pump();
+  }
+  function enqueue(item,retry=false,deadline=performance.now()+180000){
+    if(disposed||!initialized||!items.includes(item)||!item.identity)return;
+    if(retry&&item.stage!=='error')return;
+    clearImage(item);item.token++;item.stage='queued';item.card.dataset.state='queued';item.retry.hidden=true;item.status.hidden=false;item.status.textContent='等待加载…';
+    queue.push({item,epoch:generation,token:item.token,deadline:retry?performance.now()+120000:deadline});updateSummary();pump();
+  }
+  function pump(){
+    while(!disposed&&initialized&&active<2&&queue.length){
+      const job=queue.shift();if(!current(job.item,job.epoch,job.token))continue;
+      if(performance.now()>=job.deadline){failItem(job.item,'图库加载超时，请重试当前图片');continue;}
+      active++;void loadItem(job).finally(()=>{active--;pump();});
+    }
+  }
+  function headerMatches(bytes,mime){
+    if(mime==='image/png')return [137,80,78,71,13,10,26,10].every((v,i)=>bytes[i]===v);
+    if(mime==='image/jpeg')return bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
+    return new TextDecoder().decode(bytes.subarray(0,4))==='RIFF'&&new TextDecoder().decode(bytes.subarray(8,12))==='WEBP';
+  }
+  function pumpReads(){
+    while(!disposed&&readsActive<2&&readWaiters.length){
+      const waiter=readWaiters.shift();clearTimeout(waiter.timer);
+      if(waiter.epoch!==generation){waiter.reject(new Error('已选择另一组图片'));continue;}
+      readsActive++;let released=false;waiter.resolve(()=>{if(!released){released=true;readsActive--;pumpReads();}});
+    }
+  }
+  async function readChunk(arguments_,expires,epoch){
+    const release=await new Promise((resolve,reject)=>{
+      const waiter={resolve,reject,epoch,timer:null};
+      waiter.timer=setTimeout(()=>{readWaiters=readWaiters.filter(value=>value!==waiter);reject(new Error('图片读取排队超时'));},Math.max(1,expires-performance.now()));
+      readWaiters.push(waiter);pumpReads();
+    });
+    try{
+      if(disposed||epoch!==generation||performance.now()>=expires)throw new Error('图片读取已取消或超时');
+      return await request('tools/call',{name:'read_app_artifact_chunk',arguments:arguments_},expires-performance.now(),epoch);
+    }finally{release();}
+  }
+  async function readImageBytes(source,preview,expires,epoch,isCurrent,progress){
+    const selected=preview?{...source,...preview}:source,bytes=new Uint8Array(selected.bytes);
+      for(let offset=0;offset<bytes.length;){
+        if(!isCurrent())throw new Error('已选择另一组图片');
+        const remaining=expires-performance.now();if(remaining<=0)throw new Error('图片加载超时，请重试当前图片');
+        progress.textContent=`正在读取图片 ${Math.round(offset/bytes.length*100)}%`;
+        const result=await readChunk({project:source.project,path:source.path,sha256:source.sha256,bytes:source.bytes,byte_offset:offset,...(preview?{image_preview:{bytes:preview.bytes,sha256:preview.sha256}}:{})},expires,epoch);
+        if(!isCurrent())throw new Error('已选择另一组图片');
+        const body=envelope(result),page=body?.output?.artifact_chunk,privatePage=privateChunk(result);
+        if(result?.isError||body?.success!==true)throw new Error('图片读取失败或文件已变化，请重新打开图片');
+        const length=Math.min(CHUNK,bytes.length-offset),next=offset+length,encoded=privatePage?.content_base64;
+        if(!page||page.project!==selected.project||page.path!==selected.path||page.sha256!==selected.sha256||page.bytes_total!==bytes.length||page.byte_offset!==offset||page.complete!==(next===bytes.length)||page.next_byte_offset!==(next===bytes.length?null:next)
+          ||typeof encoded!=='string'||encoded.length!==Math.ceil(length/3)*4||!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))throw new Error('图片分块校验失败');
+        const decoded=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));if(decoded.length!==length)throw new Error('图片分块长度不符');
+        bytes.set(decoded,offset);offset=next;
+      }
+      const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+      if(!isCurrent())throw new Error('已选择另一组图片');
+      if(performance.now()>=expires)throw new Error('图片加载超时，请重试');
+      if(digest!==selected.sha256||!headerMatches(bytes,selected.mime_type))throw new Error('图片内容校验失败，请重新打开');
+      return bytes;
+  }
+  function declaredDimensions(bytes,mime){
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);let width=0,height=0;
+    if(mime==='image/png'&&bytes.length>=24&&view.getUint32(8)===13&&new TextDecoder().decode(bytes.subarray(12,16))==='IHDR'){
+      width=view.getUint32(16);height=view.getUint32(20);
+    }else if(mime==='image/jpeg'){
+      let offset=2;
+      while(offset+4<=bytes.length){
+        if(bytes[offset++]!==255)break;while(offset<bytes.length&&bytes[offset]===255)offset++;
+        const marker=bytes[offset++];if(marker===216||marker===1)continue;if(marker===218||marker===217)break;
+        if(offset+2>bytes.length)break;const length=view.getUint16(offset);if(length<2||offset+length>bytes.length)break;
+        if([192,193,194,195,197,198,199,201,202,203,205,206,207].includes(marker)&&length>=8){height=view.getUint16(offset+3);width=view.getUint16(offset+5);break;}offset+=length;
+      }
+    }else if(mime==='image/webp'){
+      let offset=12;
+      while(offset+8<=bytes.length){
+        const kind=new TextDecoder().decode(bytes.subarray(offset,offset+4)),length=view.getUint32(offset+4,true),start=offset+8;
+        if(start+length>bytes.length)break;
+        if(kind==='VP8X'&&length>=10){width=1+bytes[start+4]+(bytes[start+5]<<8)+(bytes[start+6]<<16);height=1+bytes[start+7]+(bytes[start+8]<<8)+(bytes[start+9]<<16);break;}
+        if(kind==='VP8L'&&length>=5&&bytes[start]===47){const bits=view.getUint32(start+1,true);width=1+(bits&16383);height=1+((bits>>>14)&16383);break;}
+        if(kind==='VP8 '&&length>=10&&bytes[start+3]===157&&bytes[start+4]===1&&bytes[start+5]===42){width=view.getUint16(start+6,true)&16383;height=view.getUint16(start+8,true)&16383;break;}
+        offset=start+length+(length%2);
+      }
+    }
+    if(!width||!height||width>MAX_PIXELS/height)throw new Error('图片声明尺寸无效或超过单图像素限制');
+    return {width,height};
+  }
+  async function decodeItemImage(item,expires){
+      let timer,cancelDecode;
+      const cancelled=new Promise((_,reject)=>{cancelDecode=()=>reject(new Error('已选择另一组图片'));item.cancelDecode=cancelDecode;});
+      try{await Promise.race([item.image.decode(),cancelled,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('图片解码超时，请重试当前图片')),Math.max(1,expires-performance.now()));})]);}
+      finally{clearTimeout(timer);if(item.cancelDecode===cancelDecode)item.cancelDecode=null;}
+  }
+  async function localPreview(item,expires,isCurrent){
+    const canvas=document.createElement('canvas');
+    const timer=setTimeout(()=>{if(isCurrent()){item.token++;failItem(item,'预览处理超时，请重试当前图片');}},Math.max(1,expires-performance.now()));
+    try{
+      for(const [edge,quality] of [[2048,.85],[1536,.7],[1024,.6]]){
+        if(!isCurrent()||performance.now()>=expires)throw new Error('预览已取消或超时');
+        const ratio=Math.min(1,edge/item.image.naturalWidth,edge/item.image.naturalHeight);
+        canvas.width=Math.max(1,Math.floor(item.image.naturalWidth*ratio));canvas.height=Math.max(1,Math.floor(item.image.naturalHeight*ratio));
+        canvas.getContext('2d').drawImage(item.image,0,0,canvas.width,canvas.height);
+        // toBlob cannot be cancelled. Keep this load slot until its callback
+        // drains, even after gallery replacement, instead of launching more encoders.
+        const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/webp',quality));
+        if(!isCurrent()||performance.now()>=expires)throw new Error('预览已取消或超时');
+        if(!blob||blob.type!=='image/webp')throw new Error('浏览器无法生成压缩预览');
+        if(blob.size>2*1024*1024)continue;
+        const bytes=new Uint8Array(await blob.arrayBuffer());
+        const digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+        if(!isCurrent())throw new Error('已选择另一组图片');
+        return {blob,bytes,descriptor:{bytes:bytes.length,sha256:digest,mime_type:'image/webp',width:canvas.width,height:canvas.height,static_frame:true}};
+      }
+      throw new Error('无法在预览预算内显示图片');
+    }finally{clearTimeout(timer);canvas.width=canvas.height=0;}
+  }
+  async function loadItem({item,epoch,token,deadline}){
+    const source=item.identity,selected=source.preview?{...source,...source.preview}:source,isCurrent=()=>current(item,epoch,token),expires=Math.min(deadline,performance.now()+120000);
+    item.stage='loading';item.card.dataset.state='loading';
+    try{
+      const bytes=await readImageBytes(source,source.preview,expires,epoch,isCurrent,item.status);
+      declaredDimensions(bytes,selected.mime_type);
+      item.url=URL.createObjectURL(new Blob([bytes],{type:selected.mime_type}));item.image.src=item.url;
+      await decodeItemImage(item,expires);
+      if(!isCurrent())return;
+      let width=item.image.naturalWidth,height=item.image.naturalHeight,area=width*height;
+      if(!width||!height||area>MAX_PIXELS)throw new Error('图片实际尺寸超过单图像素限制');
+      if(source.preview&&(width!==source.preview.width||height!==source.preview.height))throw new Error('图片预览尺寸与版本描述不一致，请重新打开');
+      if(width>16384||height>16384||area>MAX_PIXELS/items.length){
+        const local=await localPreview(item,expires,isCurrent);if(!isCurrent())return;
+        URL.revokeObjectURL(item.url);item.url=URL.createObjectURL(local.blob);item.image.src=item.url;
+        item.localPreview=local.descriptor;
+        // The encoded canvas is already bounded; retain the slot until this
+        // small decode completes and fence its late completion as usual.
+        await decodeItemImage(item,expires);if(!isCurrent())return;
+        width=item.image.naturalWidth;height=item.image.naturalHeight;area=width*height;
+      }
+      if(area>MAX_PIXELS/items.length||retainedPixels+area>MAX_PIXELS)throw new Error('图片尺寸或图库总像素超出预览限制');
+      const rendition=source.preview??item.localPreview??source;
+      retainedPixels+=area;item.pixels=area;item.image.hidden=false;item.status.hidden=true;item.fit.hidden=false;
+      item.details.textContent=`${source.preview||item.localPreview?`压缩${rendition.static_frame?'静态':''}预览 · 原图 ${(source.bytes/1024/1024).toFixed(2)} MiB 保留 · `:'原图 · '}${width} × ${height} · ${rendition.mime_type} · ${rendition.bytes.toLocaleString()} 字节 · ${selected.path}`;
+      item.stage='ready';item.card.dataset.state='ready';updateSummary();
+    }catch(error){if(isCurrent())failItem(item,error.message||'图片加载失败');}
+  }
+  function teardown(message){
+    if(disposed)return;
+    disposed=true;generation++;cancelPrevious();observer.disconnect();if(resizeFrame!==null){cancelAnimationFrame(resizeFrame);resizeFrame=null;}
+    for(const p of pending.values()){clearTimeout(p.timer);p.reject(new Error('图片预览已关闭'));}pending.clear();
+    el('summary').textContent='';el('gallery-status').hidden=false;el('gallery-status').textContent='图片预览已关闭';
+    if(message.id!==undefined)window.parent.postMessage({jsonrpc:'2.0',id:message.id,result:{}},'*');
+  }
+  function onMessage(event){
+    if(event.source!==window.parent)return;
+    const message=event.data;if(!message||message.jsonrpc!=='2.0')return;
+    if(message.method==='ui/resource-teardown'){teardown(message);return;}
+    if(disposed)return;
+    if(message.method==='ui/notifications/tool-result'){toolResult(message.params);return;}
+    if(message.method===undefined&&pending.has(message.id)){
+      const p=pending.get(message.id);pending.delete(message.id);clearTimeout(p.timer);
+      if(p.cancelled)p.reject(new Error('已选择另一组图片'));else if(message.error)p.reject(new Error('宿主拒绝请求'));else p.resolve(message.result);
+    }
+  }
+  window.addEventListener('message',onMessage);
+  request('ui/initialize',{protocolVersion:'2026-01-26',appInfo:{name:'webcodex-image',title:'WebCodex 图片',version:'5.0.0'},appCapabilities:{}})
+    .then(result=>{if(disposed)return;initialized=true;window.parent.postMessage({jsonrpc:'2.0',method:'ui/notifications/initialized'},'*');if(items.length)startBatch();else el('gallery-status').textContent='等待项目图片…';})
+    .catch(()=>{if(!disposed){el('gallery-status').hidden=false;el('gallery-status').textContent='无法连接宿主，请重新打开图片预览';}});
+})();
+</script></body></html>

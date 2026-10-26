@@ -43,6 +43,7 @@ mod goals;
 mod handoff;
 mod handoff_brief;
 mod hygiene;
+mod image_document;
 mod job_attention;
 mod job_continuation;
 mod job_input;

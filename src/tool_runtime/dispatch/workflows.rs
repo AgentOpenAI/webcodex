@@ -58,6 +58,11 @@ impl ToolRuntime {
             }
 
             ToolCall::PresentDocx { project, path } => self.present_docx(project, path, auth).await,
+            ToolCall::PresentImage {
+                project,
+                path,
+                paths,
+            } => self.present_images(project, path, paths, auth).await,
 
             ToolCall::PresentPdf { project, path } => self.present_pdf(project, path, auth).await,
             ToolCall::ReadAppArtifactChunk {
@@ -66,9 +71,25 @@ impl ToolRuntime {
                 sha256,
                 bytes,
                 byte_offset,
+                image_preview,
             } => {
-                self.read_app_artifact_chunk(project, path, sha256, bytes, byte_offset, auth)
+                if let Some(selection) = image_preview {
+                    self.read_image_preview_chunk(
+                        super::super::image_preview::ImageSource {
+                            project,
+                            path,
+                            bytes,
+                            sha256,
+                        },
+                        selection,
+                        byte_offset,
+                        auth,
+                    )
                     .await
+                } else {
+                    self.read_app_artifact_chunk(project, path, sha256, bytes, byte_offset, auth)
+                        .await
+                }
             }
             ToolCall::PresentWorkResult {
                 project,

@@ -143,6 +143,7 @@ impl AuthorizedDispatch<'_, '_> {
             | ToolCall::WorkOnProject { .. }
             | ToolCall::FinishCodingTask { .. }
             | ToolCall::PresentDocx { .. }
+            | ToolCall::PresentImage { .. }
             | ToolCall::PresentWorkResult { .. }
             | ToolCall::PresentPdf { .. }
             | ToolCall::ReadAppArtifactChunk { .. }

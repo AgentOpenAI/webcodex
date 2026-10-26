@@ -1,0 +1,21 @@
+[Unit]
+Description=WebCodex OpenAI Secure MCP Tunnel
+Documentation=https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
+Wants=network-online.target
+After=network-online.target webcodex.socket
+Requires=webcodex.socket
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/webcodex/openai-tunnel.env
+Environment=HOME=/var/lib/webcodex-tunnel
+Environment=XDG_STATE_HOME=/var/lib/webcodex-tunnel/state
+# Keep stdin open because WebCodex owns the tunnel process and uses EOF as its
+# deliberate shutdown signal. All credentials remain in root-only files.
+ExecStart=/bin/bash -o pipefail -c 'tail -f /dev/null | /usr/local/bin/webcodex server tunnel --provider openai --env-file /etc/webcodex/webcodex.env --json --stop-on-stdin-eof'
+Restart=on-failure
+RestartSec=5
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

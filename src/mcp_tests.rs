@@ -333,6 +333,8 @@ mod goal_plan_app;
 mod host_review;
 #[path = "mcp_tests/http_transport.rs"]
 mod http_transport;
+#[path = "mcp_tests/image_document_app.rs"]
+mod image_document_app;
 #[path = "mcp_tests/invocation_envelope.rs"]
 mod invocation_envelope;
 #[path = "mcp_tests/job_terminal_continuation_app.rs"]

@@ -15,7 +15,7 @@ fn app_artifact_error(kind: &str, message: &str) -> ToolResult {
     ToolResult::err_with_output(message, json!({"error_kind": kind, "state_changed": false}))
 }
 
-fn validate_app_artifact_target(
+pub(super) fn validate_app_artifact_target(
     path: &str,
     bytes: usize,
     sha256: &str,
@@ -40,7 +40,7 @@ fn validate_app_artifact_target(
     Ok(())
 }
 
-fn validate_app_artifact_segment(
+pub(super) fn validate_app_artifact_segment(
     output: &Value,
     path: &str,
     bytes: usize,

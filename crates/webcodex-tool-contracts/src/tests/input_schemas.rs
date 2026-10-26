@@ -3,6 +3,79 @@ use webcodex_core::runner_protocol::RAW_SHELL_COMMAND_MAX_BYTES;
 use webcodex_core::workflow_session_contract::EXECUTION_PURPOSE_VALUES;
 
 #[test]
+fn image_preview_selection_keeps_source_identity_and_rejects_invalid_derived_identity() {
+    let schema = input_schema_for_tool("read_app_artifact_chunk");
+    let base = json!({"project":"demo","path":"large.png","sha256":"a".repeat(64),"bytes":5*1024*1024,"byte_offset":0});
+    for preview in [None, Some(json!({"bytes":1024,"sha256":"b".repeat(64)}))] {
+        let mut input = base.clone();
+        if let Some(preview) = preview {
+            input["image_preview"] = preview;
+        }
+        test_support::validate_schema_instance(&input, &schema).unwrap();
+        let parsed = ToolCall::from_tool_name("read_app_artifact_chunk", input.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap()["params"], input);
+    }
+    for preview in [
+        json!(null),
+        json!({"bytes":0,"sha256":"b".repeat(64)}),
+        json!({"bytes":2097153,"sha256":"b".repeat(64)}),
+        json!({"bytes":1024,"sha256":"z".repeat(64)}),
+        json!({"bytes":1024,"sha256":"b".repeat(64),"path":"other.png"}),
+    ] {
+        let mut input = base.clone();
+        input["image_preview"] = preview;
+        assert!(test_support::validate_schema_instance(&input, &schema).is_err());
+    }
+    for preview in [
+        json!(null),
+        json!({"bytes":1024,"sha256":"b".repeat(64),"path":"other.png"}),
+    ] {
+        let mut input = base.clone();
+        input["image_preview"] = preview;
+        assert!(ToolCall::from_tool_name("read_app_artifact_chunk", input).is_err());
+    }
+}
+
+#[test]
+fn image_gallery_selection_contract_is_exclusive_bounded_and_preserves_single_input() {
+    let schema = input_schema_for_tool("present_image");
+    for input in [
+        json!({"project":"demo","path":"image.png"}),
+        json!({"project":"demo","paths":["image.png"]}),
+        json!({"project":"demo","paths":(0..16).map(|i|format!("{i}.png")).collect::<Vec<_>>()}),
+    ] {
+        test_support::validate_schema_instance(&input, &schema).unwrap();
+        let call = ToolCall::from_tool_name("present_image", input.clone()).unwrap();
+        assert_eq!(serde_json::to_value(call).unwrap()["params"], input);
+    }
+    for input in [
+        json!({"project":"demo"}),
+        json!({"project":"demo","path":"image.png","paths":["other.png"]}),
+        json!({"project":"demo","path":null}),
+        json!({"project":"demo","paths":null}),
+        json!({"project":"demo","paths":[]}),
+        json!({"project":"demo","paths":[""]}),
+        json!({"project":"demo","paths":["image.png","image.png"]}),
+        json!({"project":"demo","paths":(0..17).map(|i|format!("{i}.png")).collect::<Vec<_>>()}),
+    ] {
+        assert!(
+            test_support::validate_schema_instance(&input, &schema).is_err(),
+            "{input}"
+        );
+        assert!(ToolCall::from_tool_name("present_image", input).is_err());
+    }
+    for paths in [
+        vec!["image.png", "./image.png"],
+        vec!["images//one.png", "images/one.png"],
+    ] {
+        assert!(
+            ToolCall::from_tool_name("present_image", json!({"project":"demo","paths":paths}))
+                .is_err()
+        );
+    }
+}
+
+#[test]
 fn tool_specs_names_are_unique() {
     let specs = registered_tool_specs();
     let mut names = specs

@@ -57,6 +57,42 @@ pub use common::{
 };
 
 fn base_output_schema_for_tool(name: &str) -> Value {
+    if name == "present_image" {
+        let image_document = json!({
+            "type":"object", "additionalProperties":false,
+            "properties":{
+                "project":{"type":"string","minLength":1,"maxLength":512},
+                "path":{"type":"string","minLength":1,"maxLength":512},
+                "name":{"type":"string","minLength":1,"maxLength":255},
+                "sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+                "bytes":{"type":"integer","minimum":12,"maximum":webcodex_core::artifact_policy::MAX_IMAGE_SOURCE_BYTES},
+                "preview":{"type":"object","additionalProperties":false,"properties":{"bytes":{"type":"integer","minimum":12,"maximum":2097152},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"mime_type":{"const":"image/webp"},"width":{"type":"integer","minimum":1,"maximum":2048},"height":{"type":"integer","minimum":1,"maximum":2048},"static_frame":{"type":"boolean"}},"required":["bytes","sha256","mime_type","width","height","static_frame"]},
+                "mime_type":{"type":"string","enum":["image/png","image/jpeg","image/webp"]}
+            },
+            "required":["project","path","name","sha256","bytes","mime_type"]
+        });
+        let gallery_item = json!({
+            "oneOf":[
+                {"type":"object","additionalProperties":false,"properties":{"image_document":image_document.clone()},"required":["image_document"]},
+                {"type":"object","additionalProperties":false,
+                 "properties":{
+                    "path":{"type":"string","minLength":1,"maxLength":512},
+                    "error_kind":{"type":"string","enum":["image_unavailable","not_image","image_size_unavailable","image_read_unavailable","snapshot_changed","image_preview_unavailable"]},
+                    "message":{"type":"string","minLength":1,"maxLength":160}
+                 },"required":["path","error_kind","message"]}
+            ]
+        });
+        let mut schema = common::wrapped_output_schema(vec![
+            ("image_document", image_document),
+            (
+                "image_gallery",
+                json!({"type":"array","minItems":1,"maxItems":webcodex_core::artifact_policy::MAX_IMAGE_GALLERY_ITEMS,"items":gallery_item}),
+            ),
+        ]);
+        schema["properties"]["output"]["not"] =
+            json!({"required":["image_document","image_gallery"]});
+        return schema;
+    }
     if let Some(schema) = docx::output_schema_for_tool(name) {
         return schema;
     }

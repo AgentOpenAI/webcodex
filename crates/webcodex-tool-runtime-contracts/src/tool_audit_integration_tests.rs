@@ -4,6 +4,30 @@ use crate::ToolCallAuditProjection;
 use serde_json::json;
 use webcodex_tool_contracts::{ObserveJobsWakeOn, ToolCall};
 
+#[test]
+fn image_presentation_audit_retains_only_the_selected_single_or_gallery_paths() {
+    let single = ToolCall::from_tool_name(
+        "present_image",
+        json!({"project":"agent:viewer:images","path":"one.png"}),
+    )
+    .unwrap();
+    assert_eq!(
+        single.session_log_arguments(),
+        json!({"project":"agent:viewer:images","path":"one.png"})
+    );
+    let gallery = ToolCall::from_tool_name(
+        "present_image",
+        json!({"project":"agent:viewer:images","paths":["one.png","two.png"]}),
+    )
+    .unwrap();
+    assert_eq!(gallery.project(), Some("agent:viewer:images"));
+    assert_eq!(
+        gallery.session_log_arguments(),
+        json!({"project":"agent:viewer:images","paths":["one.png","two.png"]})
+    );
+    assert!(gallery.session_log_arguments().get("path").is_none());
+}
+
 #[cfg(feature = "experimental-code-mode")]
 #[test]
 fn code_mode_exec_parses_outer_authority_and_omits_source_from_audit() {

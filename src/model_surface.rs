@@ -32,6 +32,7 @@ pub(crate) fn tool_requires_direct_app_presentation(tool_name: &str) -> bool {
         tool_name,
         "present_work_result"
             | "present_pdf"
+            | "present_image"
             | "present_docx"
             | "present_spreadsheet"
             | "present_goal_plan"

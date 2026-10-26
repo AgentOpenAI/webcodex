@@ -77,3 +77,6 @@ __pycache__/
 /artifacts/flowing-selection/
 /artifacts/selection-consistency/
 /artifacts/mobile-runtime-layout/
+
+# Runtime browser screenshots may contain private authenticated page contents.
+/artifacts/managed-browser/

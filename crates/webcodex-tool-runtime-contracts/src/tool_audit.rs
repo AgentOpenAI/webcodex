@@ -2099,6 +2099,20 @@ impl ToolCallAuditProjection for ToolCall {
                     "path": path,
                 })
             }
+            Self::PresentImage {
+                project,
+                path,
+                paths,
+            } => {
+                let mut summary = serde_json::json!({"project":project});
+                if let Some(path) = path {
+                    summary["path"] = serde_json::json!(path);
+                }
+                if let Some(paths) = paths {
+                    summary["paths"] = serde_json::json!(paths);
+                }
+                summary
+            }
             Self::PresentWorkResult {
                 project,
                 session_id,

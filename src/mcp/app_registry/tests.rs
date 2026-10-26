@@ -2,8 +2,25 @@ use super::*;
 use std::collections::HashSet;
 
 #[test]
+fn image_history_keeps_compatible_read_only_rendering() {
+    let current = for_tool("present_image").unwrap();
+    for uri in [
+        MCP_IMAGE_V1_UI_RESOURCE_URI,
+        "ui://webcodex/image/v2",
+        "ui://webcodex/image/v3",
+        "ui://webcodex/image/v4",
+    ] {
+        let historical = for_uri(uri).unwrap();
+        assert!(historical.listing.is_none() && historical.tools.is_empty());
+        assert_eq!(historical.html, current.html);
+        assert_ne!(historical.uri, current.uri);
+    }
+}
+
+#[test]
 fn bundled_app_registry_has_unique_exact_identities_and_stable_discovery() {
     let expected = [
+        "ui://webcodex/image/v5",
         "ui://webcodex/pdf/v7",
         "ui://webcodex/spreadsheet/v5",
         "ui://webcodex/computer/v12",
@@ -23,7 +40,7 @@ fn bundled_app_registry_has_unique_exact_identities_and_stable_discovery() {
         .collect();
     assert_eq!(uris, expected);
     assert_eq!(listed, resources_list(None));
-    assert_eq!(BUILTIN_MCP_APPS.len(), expected.len() + 1);
+    assert_eq!(BUILTIN_MCP_APPS.len(), expected.len() + 5);
     let mut identities = HashSet::new();
     let mut tools = HashSet::new();
     for app in BUILTIN_MCP_APPS {
@@ -37,7 +54,7 @@ fn bundled_app_registry_has_unique_exact_identities_and_stable_discovery() {
             assert!(for_uri(&format!("{}{extra}", app.uri)).is_none());
         }
     }
-    assert_eq!(tools.len(), 9);
+    assert_eq!(tools.len(), 10);
     for retired in [
         "ui://webcodex/docx/v1",
         "ui://webcodex/spreadsheet/v1",
@@ -127,6 +144,7 @@ fn bundled_app_registry_preserves_read_only_cached_resource_without_new_bindings
     for (tool, uri) in [
         ("open_webcodex_workbench", MCP_WORKBENCH_UI_RESOURCE_URI),
         ("present_pdf", MCP_PDF_UI_RESOURCE_URI),
+        ("present_image", MCP_IMAGE_UI_RESOURCE_URI),
         ("present_work_result", MCP_WORK_RESULT_UI_RESOURCE_URI),
         ("present_spreadsheet", MCP_SPREADSHEET_UI_RESOURCE_URI),
         ("present_goal_plan", MCP_GOAL_PLAN_UI_RESOURCE_URI),
@@ -160,7 +178,9 @@ fn bundled_app_registry_keeps_resource_csp_display_modes_and_cache_policy_separa
         assert_eq!(meta["ui"].get("domain"), domain.map(Value::from).as_ref());
         for resource in resources_list(domain)["resources"].as_array().unwrap() {
             let mut expected = meta.clone();
-            if resource["uri"] == MCP_SPREADSHEET_UI_RESOURCE_URI {
+            if resource["uri"] == MCP_SPREADSHEET_UI_RESOURCE_URI
+                || resource["uri"] == MCP_IMAGE_UI_RESOURCE_URI
+            {
                 expected["ui"]["csp"]["resourceDomains"] = json!(["blob:"]);
             }
             assert_eq!(resource["_meta"], expected);
@@ -174,13 +194,26 @@ fn bundled_app_registry_keeps_resource_csp_display_modes_and_cache_policy_separa
             assert_eq!(contents[0]["text"], app.html);
             assert_eq!(contents[0]["mimeType"], MCP_UI_RESOURCE_MIME_TYPE);
             let mut expected = meta.clone();
-            if app.uri == MCP_SPREADSHEET_UI_RESOURCE_URI {
+            if matches!(
+                app.uri,
+                MCP_SPREADSHEET_UI_RESOURCE_URI
+                    | MCP_IMAGE_UI_RESOURCE_URI
+                    | MCP_IMAGE_V1_UI_RESOURCE_URI
+                    | "ui://webcodex/image/v2"
+                    | "ui://webcodex/image/v3"
+                    | "ui://webcodex/image/v4"
+            ) {
                 expected["ui"]["csp"]["resourceDomains"] = json!(["blob:"]);
             }
             assert_eq!(contents[0]["_meta"]["ui"], expected["ui"]);
             if matches!(
                 app.uri,
                 MCP_WORK_RESULT_UI_RESOURCE_URI
+                    | MCP_IMAGE_UI_RESOURCE_URI
+                    | MCP_IMAGE_V1_UI_RESOURCE_URI
+                    | "ui://webcodex/image/v2"
+                    | "ui://webcodex/image/v3"
+                    | "ui://webcodex/image/v4"
                     | MCP_DOCX_UI_RESOURCE_URI
                     | MCP_SPREADSHEET_UI_RESOURCE_URI
             ) {
